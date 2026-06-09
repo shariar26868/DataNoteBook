@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: datanotebook-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      # Add your environment variables here
+      # - DATABASE_URL=
+      # - AWS_ACCESS_KEY_ID=
+      # - AWS_SECRET_ACCESS_KEY=
+      # - OPENAI_API_KEY=
+    volumes:
+      - ./backend:/app
+      - ./backend/uploads:/app/uploads
+    networks:
+      - datanotebook-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Uncomment and configure if you need a database (PostgreSQL example)
+  # postgres:
+  #   image: postgres:15-alpine
+  #   container_name: datanotebook-postgres
+  #   environment:
+  #     - POSTGRES_DB=datanotebook
+  #     - POSTGRES_USER=postgres
+  #     - POSTGRES_PASSWORD=changeme
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   networks:
+  #     - datanotebook-network
+  #   restart: unless-stopped
+
+  # Uncomment if you want to serve frontend via nginx
+  # frontend:
+  #   image: nginx:alpine
+  #   container_name: datanotebook-frontend
+  #   ports:
+  #     - "80:80"
+  #   volumes:
+  #     - ./frontend:/usr/share/nginx/html:ro
+  #   networks:
+  #     - datanotebook-network
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - backend
+
+networks:
+  datanotebook-network:
+    driver: bridge
+
+# volumes:
+#   postgres_data:
