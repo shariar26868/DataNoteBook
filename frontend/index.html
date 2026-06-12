@@ -36,7 +36,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);
   width:var(--sidebar-l);display:flex;align-items:center;gap:8px;
   padding:0 14px;border-right:1px solid var(--border);height:100%;flex-shrink:0;
 }
-.tb-brand .logo{font-weight:700;font-size:14px;letter-spacing:-.02em;color:var(--text);}
+.tb-brand .logo{font-weight:700;font-size:14px;letter-spacing:-.02em;color:var(--text);text-decoration:none;cursor:pointer;transition:opacity .15s;}
+.tb-brand .logo:hover{opacity:.8;}
 .tb-brand .logo em{color:var(--accent);font-style:normal;}
 .tb-center{
   flex:1;display:flex;align-items:center;justify-content:center;gap:16px;
@@ -131,7 +132,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);
   flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);
 }
 #cell-scroll{flex:1;overflow-y:auto;padding:24px 32px;}
-.cell-list{display:flex;flex-direction:column;gap:0;}
+.cell-list{display:flex;flex-direction:column;gap:12px;}
 
 /* Prose / markdown text block between cells */
 .prose-block{
@@ -146,7 +147,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);
 /* Code cell */
 .nb-cell{
   display:flex;align-items:flex-start;gap:0;
-  border-radius:var(--radius);overflow:visible;margin-bottom:2px;
+  border-radius:var(--radius);overflow:visible;margin-bottom:0;
 }
 .cell-gutter{
   width:44px;flex-shrink:0;display:flex;align-items:flex-start;
@@ -246,7 +247,7 @@ pre.cell-code .nu{color:#f78c6c;}
 /* ── Empty / new cell placeholder ───────────────────── */
 .empty-cell{
   display:flex;align-items:center;gap:0;
-  margin-bottom:2px;
+  margin-bottom:0;
 }
 .empty-cell .cell-gutter{
   width:44px;flex-shrink:0;display:flex;align-items:center;
@@ -585,20 +586,21 @@ pre.cell-code .nu{color:#f78c6c;}
 <!-- ── Top bar ────────────────────────────────────────── -->
 <div id="topbar">
   <div class="tb-brand">
-    <span class="logo">Data<em>Notebook</em></span>
+    <a href="/upload.html" class="logo">Data<em>Notebook</em></a>
   </div>
   <div class="tb-center">
     <input id="notebook-title" value="Untitled" aria-label="Notebook title"/>
     <div class="tb-icons">
-      <button class="tb-icon-btn" id="tb-run-all" title="Run all cells">⚡</button>
-      <button class="tb-icon-btn" id="tb-settings" title="Settings">⚙</button>
+      <button class="tb-icon-btn" id="tb-run-all" title="Run all cells">▶</button>
+      <button class="tb-icon-btn" id="tb-settings" title="Settings">≡</button>
     </div>
   </div>
   <div class="tb-right">
     <span id="autosave-status" style="font-size:11px;color:var(--text3);margin-right:6px;white-space:nowrap;"></span>
-    <button class="tb-icon-btn" id="tb-save" title="Save to cloud (Ctrl+S)" style="color:var(--success);">💾</button>
-    <a href="/projects.html" class="tb-icon-btn" title="My Projects" style="text-decoration:none;">🗂</a>
-    <button class="tb-icon-btn" id="tb-share" title="Share">↑</button>
+    <button class="tb-icon-btn" id="tb-save" title="Save to cloud (Ctrl+S)" style="color:var(--success);">✓</button>
+    <button class="tb-icon-btn" id="tb-new" title="New Notebook">+</button>
+    <a href="/projects.html" class="tb-icon-btn" title="My Projects" style="text-decoration:none;">📋</a>
+    <button class="tb-icon-btn" id="tb-share" title="Share">⇧</button>
   </div>
 </div>
 
@@ -622,17 +624,17 @@ pre.cell-code .nu{color:#f78c6c;}
     <div class="fs-header">
       <span class="fs-title">Table of contents</span>
       <div class="fs-actions">
-        <button class="fs-btn" id="fs-upload" title="Upload file">⬆</button>
-        <button class="fs-btn" title="New folder">📁</button>
-        <button class="fs-btn" title="Toggle preview">👁</button>
-        <button class="fs-btn" id="fs-refresh" title="Refresh">↺</button>
+        <button class="fs-btn" id="fs-upload" title="Upload file">⇧</button>
+        <button class="fs-btn" title="New folder">⊕</button>
+        <button class="fs-btn" title="Toggle preview">◯</button>
+        <button class="fs-btn" id="fs-refresh" title="Refresh">↻</button>
         <button class="fs-btn" id="fs-close" title="Close">✕</button>
       </div>
     </div>
     <div class="file-tree" id="file-tree">
       <div class="tree-item" onclick="this.classList.toggle('open')">
         <span class="tree-icon">›</span>
-        <span class="tree-icon">📂</span>
+        <span class="tree-icon">⊙</span>
         <span class="tree-label">..</span>
       </div>
       <div id="uploaded-files-list"></div>
@@ -644,7 +646,7 @@ pre.cell-code .nu{color:#f78c6c;}
     <div id="cell-scroll">
       <div class="cell-list" id="cell-list">
         <div class="nb-empty" id="nb-empty">
-          <div class="big">📓</div>
+          <div class="big">[ ]</div>
           <p>Upload a dataset and start chatting — your code cells will appear here.</p>
         </div>
       </div>
@@ -667,7 +669,7 @@ pre.cell-code .nu{color:#f78c6c;}
     <div class="cs-header">
       <span class="cs-title">Gemini</span>
       <button class="cs-icon-btn" id="cs-new" title="New chat">+</button>
-      <button class="cs-icon-btn" id="cs-menu" title="Options">⋮</button>
+      <button class="cs-icon-btn" id="cs-menu" title="Options">⋯</button>
       <button class="cs-icon-btn" id="cs-close" title="Close">✕</button>
     </div>
 
@@ -690,7 +692,7 @@ pre.cell-code .nu{color:#f78c6c;}
 </div><!-- /shell -->
 
 <!-- Floating open-chat button -->
-<button id="float-chat" title="Open chat" aria-label="Open chat">💬</button>
+<button id="float-chat" title="Open chat" aria-label="Open chat">»</button>
 
 <!-- ── Welcome overlay ────────────────────────────────── -->
 <div id="welcome-overlay">
@@ -928,7 +930,7 @@ function appendUserMsg(text) {
 function appendAiMsg(explanation, loading=false) {
   const wrap=document.createElement('div'); wrap.className='msg-ai'+(loading?' loading':'');
   const inner=document.createElement('div'); inner.className='msg-ai-inner';
-  const av=document.createElement('div'); av.className='ai-avatar'; av.textContent='✦';
+  const av=document.createElement('div'); av.className='ai-avatar'; av.textContent='■';
   const body=document.createElement('div'); body.className='msg-ai-body';
   if (explanation) { const p=document.createElement('p'); p.appendChild(formatExplanation(explanation)); body.appendChild(p); }
   // feedback buttons
@@ -965,13 +967,13 @@ async function sendChat(text) {
     aiBody.innerHTML='';
     const p=document.createElement('p'); p.appendChild(formatExplanation(data.explanation||'Here is the code.'));
     const fb=document.createElement('div'); fb.className='msg-ai-feedback';
-    ['👍','👎'].forEach(icon=>{ const b=document.createElement('button'); b.className='fb-btn'; b.textContent=icon; fb.appendChild(b); });
+    ['+1','-1'].forEach(icon=>{ const b=document.createElement('button'); b.className='fb-btn'; b.textContent=icon; fb.appendChild(b); });
     aiBody.appendChild(p); aiBody.appendChild(fb);
     S.messages.push({role:'ai',text:data.explanation||'',code:data.code||null});
     if (data.code) { S.pendingCode=data.code; actionBar.classList.add('visible'); }
   } catch(e) {
     aiBubble.classList.remove('loading');
-    aiBody.innerHTML=''; const p=document.createElement('p'); p.textContent='⚠ '+e.message; aiBody.appendChild(p);
+    aiBody.innerHTML=''; const p=document.createElement('p'); p.textContent='! '+e.message; aiBody.appendChild(p);
   } finally {
     csSend.disabled=false; msgList.scrollTop=msgList.scrollHeight;
   }
@@ -1065,6 +1067,8 @@ function appendCell(code) {
 
   body.appendChild(srcWrap); body.appendChild(out);
   cell.appendChild(gutter); cell.appendChild(body);
+  cell.dataset.cellType = 'code';
+  cell.runCell = runCell;
   cellList.appendChild(cell);
   cell.scrollIntoView({behavior:'smooth',block:'start'});
 
@@ -1104,7 +1108,7 @@ async function streamExec(code, outDiv, outPre) {
     });
     if (!res.ok) {
       const e=await res.json().catch(()=>({detail:'Execution failed'}));
-      outPre.textContent='❌ '+(e.detail||'Execution failed');
+      outPre.textContent='[ERROR] '+(e.detail||'Execution failed');
       outDiv.classList.add('has-error'); return;
     }
     const reader=res.body.getReader(); const dec=new TextDecoder(); let buf='';
@@ -1117,11 +1121,11 @@ async function streamExec(code, outDiv, outPre) {
         if(ev.type==='stdout'){ outPre.textContent+=ev.data+'\n'; outDiv.scrollTop=outDiv.scrollHeight; }
         else if(ev.type==='image'){ const img=document.createElement('img'); img.src=ev.data; img.alt='plot'; outDiv.appendChild(img); }
         else if(ev.type==='table'){ const tw=document.createElement('div'); tw.style.marginTop='8px'; renderTable(ev.data,tw); outDiv.appendChild(tw); }
-        else if(ev.type==='error'){ outPre.textContent+='\n❌ '+ev.data; outDiv.classList.add('has-error'); }
+        else if(ev.type==='error'){ outPre.textContent+='\n[ERROR] '+ev.data; outDiv.classList.add('has-error'); }
         else if(ev.type==='done'&&!doneSeen){ doneSeen=true; }
       }
     }
-  } catch(e){ outPre.textContent='❌ '+e.message; outDiv.classList.add('has-error'); }
+  } catch(e){ outPre.textContent='[ERROR] '+e.message; outDiv.classList.add('has-error'); }
 }
 
 /* ── Action bar ─────────────────────────────────────────── */
@@ -1225,17 +1229,17 @@ function addTextCell() {
     {icon:'B',tip:'Bold (Ctrl+B)',cmd:()=>fmt('bold')},
     {icon:'I',tip:'Italic (Ctrl+I)',cmd:()=>fmt('italic')},
     {icon:'<>',tip:'Inline code',cmd:()=>insertCode()},
-    {icon:'🔗',tip:'Link',cmd:()=>openLinkDialog()},
-    {icon:'🖼',tip:'Image',cmd:()=>openImageDialog()},
+    {icon:'[L]',tip:'Link',cmd:()=>openLinkDialog()},
+    {icon:'[I]',tip:'Image',cmd:()=>openImageDialog()},
     {sep:true},
-    {icon:'❝',tip:'Blockquote',cmd:()=>fmt('formatBlock','blockquote')},
-    {icon:'1≡',tip:'Numbered list',cmd:()=>fmt('insertOrderedList')},
-    {icon:'•≡',tip:'Bullet list',cmd:()=>fmt('insertUnorderedList')},
-    {icon:'—',tip:'Horizontal rule',cmd:()=>insertHR()},
+    {icon:'"',tip:'Blockquote',cmd:()=>fmt('formatBlock','blockquote')},
+    {icon:'1.',tip:'Numbered list',cmd:()=>fmt('insertOrderedList')},
+    {icon:'•',tip:'Bullet list',cmd:()=>fmt('insertUnorderedList')},
+    {icon:'-',tip:'Horizontal rule',cmd:()=>insertHR()},
     {sep:true},
-    {icon:'Ψ',tip:'Formula (LaTeX)',cmd:()=>insertFormula()},
-    {icon:'😊',tip:'Emoji',cmd:()=>insertEmoji()},
-    {icon:'⊞',tip:'Table',cmd:()=>insertTable()},
+    {icon:'f(x)',tip:'Formula (LaTeX)',cmd:()=>insertFormula()},
+    {icon:'[E]',tip:'Emoji',cmd:()=>insertEmoji()},
+    {icon:'[T]',tip:'Table',cmd:()=>insertTable()},
   ];
 
   tools.forEach(t=>{
@@ -1323,8 +1327,8 @@ function addTextCell() {
     if(formula){ document.execCommand('insertHTML',false,`<code>$$${formula}$$</code>`); }
   }
   function insertEmoji(){
-    const emojis=['😀','😂','👍','🎉','🔥','💡','📊','🐍','✅','❌','⚠️','📌','🔍','💻','🎯'];
-    const pick=prompt('Choose emoji or type one:\n'+emojis.join(' '),'😀');
+    const emojis=[':)',':D','+1','!','*','ok','chart','snake','checkmark','x','warning','pin','search','code','target'];
+    const pick=prompt('Choose emoji or type one:\n'+emojis.join(' '),':)');
     if(pick){ editor.focus(); document.execCommand('insertText',false,pick); }
   }
 
@@ -1363,6 +1367,22 @@ function addTextCell() {
 // Wire up buttons
 $('add-code-btn').addEventListener('click',()=>addEmptyCodeCell());
 $('add-text-btn').addEventListener('click',()=>addTextCell());
+$('tb-run-all').addEventListener('click', runAllCells);
+
+async function runAllCells() {
+  const btn = $('tb-run-all');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+  const cells = Array.from(cellList.querySelectorAll('.nb-cell')).filter(c => typeof c.runCell === 'function');
+  for (const cell of cells) {
+    try {
+      await cell.runCell();
+    } catch (e) {
+      console.error('Run all cell failed', e);
+      break;
+    }
+  }
+  if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+}
 
 // Ctrl+M B shortcut
 document.addEventListener('keydown', e=>{
@@ -1514,11 +1534,41 @@ async function loadNotebookById(notebookId) {
     currentNotebookId = data.notebook_id;
     const titleEl = document.getElementById('notebook-title');
     if (titleEl) titleEl.value = data.title || 'Untitled';
+    if (data.dataset_filename) {
+      S.active = true;
+      S.filename = data.dataset_filename;
+      S.dfName = inferDfName(data.dataset_filename);
+      renderWlChips();
+      setHint(`Dataset restored: ${S.filename}`, 'ok');
+    }
     restoreCells(data.cells);
     saveLocal();
     hideWelcome();
     showBanner(`✓ Loaded: ${data.title}`);
   } catch(e) { showBanner('Load failed: '+e.message, 'err'); }
+}
+
+async function restoreFromSession() {
+  try {
+    const res = await fetch('/api/session', { credentials: 'include' });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (!data.active) return false;
+    S.active = true;
+    S.filename = data.filename || '';
+    S.dfName = S.filename ? inferDfName(S.filename) : '';
+    S.columns = data.columns || [];
+    S.dtypes = data.dtypes || {};
+    S.rowCount = data.row_count || 0;
+    if (S.filename) {
+      renderWlChips();
+      hideWelcome();
+      setHint(`Dataset restored: ${S.filename}`, 'ok');
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 /* ── Restore from localStorage on page load ─────────── */
@@ -1581,22 +1631,64 @@ document.addEventListener('keydown', e=>{ if((e.ctrlKey||e.metaKey)&&e.key==='s'
 // Save button
 document.getElementById('tb-save')?.addEventListener('click', ()=>saveNotebook());
 
+// New Notebook button
+document.getElementById('tb-new')?.addEventListener('click', ()=>{
+  if(confirm('Create a new blank notebook? Current unsaved changes will be lost.')) {
+    currentNotebookId = null;
+    S.active = false;
+    S.filename = '';
+    S.dfName = '';
+    S.columns = [];
+    S.dtypes = {};
+    S.rowCount = 0;
+    S.messages = [];
+    cellCount = 0;
+    const titleEl = document.getElementById('notebook-title');
+    if(titleEl) titleEl.value = 'Untitled';
+    cellList.innerHTML = '';
+    window.history.replaceState({}, '', '/');
+    showWelcome();
+    showBanner('✓ New notebook created');
+  }
+});
+
 // Save to localStorage before browser closes
 window.addEventListener('beforeunload', saveLocal);
 
 // Hook auto-local-save observer
 hookAutoLocalSave();
 
+// Helper to check if the page was reloaded/refreshed
+function checkIsReload() {
+  try {
+    const nav = performance.getEntriesByType('navigation')[0];
+    if (nav) {
+      return nav.type === 'reload';
+    }
+  } catch (e) {}
+  try {
+    return performance.navigation.type === 1;
+  } catch (e) {}
+  return false;
+}
+
 // ── Init: check URL param or localStorage ────────────
-(function(){
+(async function(){
   const params = new URLSearchParams(window.location.search);
   const nbId = params.get('nb');
   if (nbId) {
     // Load from cloud by ID
     setTimeout(()=>loadNotebookById(nbId), 200);
   } else {
-    // Try restoring from localStorage first
-    restoreFromLocal();
+    // Only restore from localStorage if the page is being reloaded/refreshed
+    if (checkIsReload()) {
+      const restored = restoreFromLocal();
+      if (!restored) {
+        await restoreFromSession();
+      }
+    } else {
+      await restoreFromSession();
+    }
   }
 })();
 

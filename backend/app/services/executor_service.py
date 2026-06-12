@@ -8,6 +8,7 @@ import queue
 import pandas as pd
 import numpy as np
 import matplotlib
+import ast
 from typing import Optional
 
 from app.models.session import SessionData
@@ -32,6 +33,32 @@ def _uses_df(code: str) -> bool:
     """Check if code explicitly references 'df' variable."""
     import re
     return bool(re.search(r'\bdf\b', code))
+
+
+def _exec_code(code: str, local_ns: dict):
+    """
+    Execute code in the local namespace.
+    If the last statement is an expression, evaluate it and store the result
+    in local_ns["__last_expr_result__"].
+    """
+    try:
+        tree = ast.parse(code)
+    except Exception:
+        exec(code, {"__builtins__": __builtins__}, local_ns)
+        return
+
+    if not tree.body:
+        return
+
+    last_node = tree.body[-1]
+    if isinstance(last_node, ast.Expr):
+        tree.body.pop()
+        if tree.body:
+            exec(compile(tree, filename="<string>", mode="exec"), {"__builtins__": __builtins__}, local_ns)
+        expr_val = eval(compile(ast.Expression(body=last_node.value), filename="<string>", mode="eval"), {"__builtins__": __builtins__}, local_ns)
+        local_ns["__last_expr_result__"] = expr_val
+    else:
+        exec(code, {"__builtins__": __builtins__}, local_ns)
 
 
 class _LineStreamWriter(io.TextIOBase):
@@ -61,8 +88,14 @@ def _build_namespace(session: Optional[SessionData], code: str) -> dict:
       1. A session exists, AND
       2. The code actually references 'df'
     Always provides pd, np, matplotlib imports.
+    If a session exists, reuse its kernel namespace so variables persist across cells.
     """
-    ns: dict = {"pd": pd, "np": np}
+    if session is not None:
+        ns: dict = session.kernel_ns
+        ns.setdefault("pd", pd)
+        ns.setdefault("np", np)
+    else:
+        ns = {"pd": pd, "np": np}
 
     if session is not None and _uses_df(code):
         try:
@@ -113,8 +146,29 @@ def execute_code(session: Optional[SessionData], code: str) -> dict:
 
     try:
         local_ns = dict(initial_ns)
-        exec(code, {"__builtins__": __builtins__}, local_ns)
-        result_obj = _capture_result(local_ns, initial_keys)
+        _exec_code(code, local_ns)
+
+        if "__last_expr_result__" in local_ns:
+            expr_val = local_ns["__last_expr_result__"]
+            if isinstance(expr_val, (pd.DataFrame, pd.Series)):
+                result_obj = expr_val
+            elif expr_val is not None:
+                print(repr(expr_val))
+        else:
+            result_obj = _capture_result(local_ns, initial_keys)
+
+        # Persist kernel state and dataset modifications between cells.
+        if session is not None:
+            session.kernel_ns = local_ns
+            if _uses_df(code) and "df" in local_ns and isinstance(local_ns["df"], pd.DataFrame):
+                session.cached_df = local_ns["df"]
+
+        # Close all active pyplot figures to avoid leaking plots into subsequent executions
+        try:
+            import matplotlib.pyplot as plt
+            plt.close('all')
+        except Exception:
+            pass
 
     except Exception:
         error = traceback.format_exc(limit=5)
@@ -175,10 +229,21 @@ def execute_code_streaming(session: Optional[SessionData], code: str):
         nonlocal result_obj, error, image_url
         try:
             local_ns = dict(initial_ns)
-            exec(code, {"__builtins__": __builtins__}, local_ns)
+            _exec_code(code, local_ns)
 
-            # Capture explicitly assigned DataFrame/Series (not the injected df)
-            result_obj = _capture_result(local_ns, initial_keys)
+            if "__last_expr_result__" in local_ns:
+                expr_val = local_ns["__last_expr_result__"]
+                if isinstance(expr_val, (pd.DataFrame, pd.Series)):
+                    result_obj = expr_val
+                elif expr_val is not None:
+                    print(repr(expr_val))
+            else:
+                result_obj = _capture_result(local_ns, initial_keys)
+
+            if session is not None:
+                session.kernel_ns = local_ns
+                if _uses_df(code) and "df" in local_ns and isinstance(local_ns["df"], pd.DataFrame):
+                    session.cached_df = local_ns["df"]
 
             # Capture matplotlib figure → S3
             fig = None
@@ -205,6 +270,13 @@ def execute_code_streaming(session: Optional[SessionData], code: str):
                 s3_key = f"{settings.S3_IMAGES_PREFIX}/{message_id}.png"
                 upload_bytes_to_s3(img_buf.read(), s3_key, "image/png")
                 image_url = generate_presigned_url(s3_key, settings.S3_PRESIGNED_URL_EXPIRY)
+
+            # Close all active pyplot figures to avoid leaking plots into subsequent executions
+            try:
+                import matplotlib.pyplot as plt
+                plt.close('all')
+            except Exception:
+                pass
 
         except Exception:
             error = traceback.format_exc(limit=5)
@@ -276,7 +348,12 @@ def execute_code_save_image(session: Optional[SessionData], code: str) -> dict:
 
     try:
         local_ns = dict(initial_ns)
-        exec(code, {"__builtins__": __builtins__}, local_ns)
+        _exec_code(code, local_ns)
+
+        if "__last_expr_result__" in local_ns:
+            expr_val = local_ns["__last_expr_result__"]
+            if expr_val is not None and not isinstance(expr_val, (pd.DataFrame, pd.Series)):
+                print(repr(expr_val))
 
         fig = None
         for v in local_ns.values():
@@ -303,6 +380,13 @@ def execute_code_save_image(session: Optional[SessionData], code: str) -> dict:
             s3_image_key = f"{settings.S3_IMAGES_PREFIX}/{message_id}.png"
             upload_bytes_to_s3(img_bytes, s3_image_key, "image/png")
             image_url = generate_presigned_url(s3_image_key, settings.S3_PRESIGNED_URL_EXPIRY)
+
+        # Close all active pyplot figures to avoid leaking plots into subsequent executions
+        try:
+            import matplotlib.pyplot as plt
+            plt.close('all')
+        except Exception:
+            pass
 
     except Exception:
         error = traceback.format_exc(limit=5)

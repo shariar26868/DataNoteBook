@@ -72,9 +72,16 @@ async def handle_upload(file: UploadFile) -> SessionData:
 
 
 def load_dataframe(session: SessionData) -> pd.DataFrame:
-    """Download file from S3 and return as DataFrame."""
+    """Return the session's cached DataFrame if available; otherwise download and cache it."""
+    if session.cached_df is not None:
+        return session.cached_df
+
     ext = Path(session.s3_key).suffix.lower()
     buf = download_fileobj_from_s3(session.s3_key)
     if ext == ".csv":
-        return pd.read_csv(buf)
-    return pd.read_excel(buf)
+        df = pd.read_csv(buf)
+    else:
+        df = pd.read_excel(buf)
+
+    session.cached_df = df
+    return df

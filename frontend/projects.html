@@ -22,7 +22,8 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Inter,u
   background:var(--bg2);border-bottom:1px solid var(--border);
   display:flex;align-items:center;padding:0 16px;gap:12px;
 }
-.logo{font-weight:700;font-size:14px;letter-spacing:-.02em;}
+.logo{font-weight:700;font-size:14px;letter-spacing:-.02em;cursor:pointer;text-decoration:none;color:var(--text);transition:opacity .15s;display:inline-block;}
+.logo:hover{opacity:.8;}
 .logo em{color:var(--accent);font-style:normal;}
 
 /* Activity bar */
@@ -170,13 +171,13 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Inter,u
 
 <!-- Top bar -->
 <div id="topbar">
-  <span class="logo">Data<em>Notebook</em></span>
+  <a href="/upload.html" class="logo">Data<em>Notebook</em></a>
 </div>
 
 <!-- Activity bar -->
 <nav id="activity-bar">
   <a href="/" class="act-btn" title="New notebook">+</a>
-  <a href="/projects.html" class="act-btn active" title="Projects">🗂</a>
+  <a href="/projects.html" class="act-btn active" title="Projects">[P]</a>
   <div class="act-spacer"></div>
   <button id="user-avatar" title="User">M</button>
 </nav>
@@ -187,7 +188,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Inter,u
 
     <div class="search-wrap">
       <div class="search-bar">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon">[S]</span>
         <input id="search-input" type="text" placeholder="Search Works" aria-label="Search notebooks"/>
       </div>
     </div>
@@ -214,9 +215,9 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:Inter,u
 
 <!-- Context menu -->
 <div class="ctx-menu" id="ctx-menu">
-  <div class="ctx-item" id="ctx-open">📂 Open</div>
-  <div class="ctx-item" id="ctx-rename">✏ Rename</div>
-  <div class="ctx-item danger" id="ctx-delete">🗑 Delete</div>
+  <div class="ctx-item" id="ctx-open">[Open] Open</div>
+  <div class="ctx-item" id="ctx-rename">[Edit] Rename</div>
+  <div class="ctx-item danger" id="ctx-delete">[Delete] Delete</div>
 </div>
 
 <!-- Toast -->
@@ -255,7 +256,7 @@ function renderGrid(list){
   countEl.textContent = list.length ? `${list.length} notebook${list.length>1?'s':''}` : 'All works';
   if(!list.length){
     grid.innerHTML=`<div class="empty-state" style="grid-column:1/-1">
-      <span class="big">📓</span>
+      <span class="big">[Notebook]</span>
       <p>No notebooks yet. <a href="/">Create your first notebook →</a></p>
     </div>`;
     return;
@@ -265,7 +266,7 @@ function renderGrid(list){
     const card=document.createElement('div'); card.className='nb-card';
     card.dataset.id=nb.notebook_id;
 
-    const icon=document.createElement('span'); icon.className='nb-icon'; icon.textContent='🗄';
+    const icon=document.createElement('span'); icon.className='nb-icon'; icon.textContent='[Doc]';
     const info=document.createElement('div'); info.className='nb-info';
     const title=document.createElement('div'); title.className='nb-title'; title.textContent=nb.title||'Untitled';
     const meta=document.createElement('div'); meta.className='nb-meta';
@@ -273,7 +274,7 @@ function renderGrid(list){
     info.appendChild(title); info.appendChild(meta);
 
     const menuBtn=document.createElement('button'); menuBtn.className='nb-menu-btn';
-    menuBtn.textContent='⋮'; menuBtn.title='Options';
+    menuBtn.textContent='[...]'; menuBtn.title='Options';
     menuBtn.addEventListener('click',e=>{ e.stopPropagation(); openCtxMenu(e, nb.notebook_id); });
 
     card.appendChild(icon); card.appendChild(info); card.appendChild(menuBtn);
@@ -292,7 +293,7 @@ async function loadNotebooks(){
     notebooks=data.notebooks||[];
     renderGrid(notebooks);
   } catch(e){
-    grid.innerHTML=`<div class="empty-state" style="grid-column:1/-1"><span class="big">⚠️</span><p>Could not load notebooks: ${e.message}</p></div>`;
+    grid.innerHTML=`<div class="empty-state" style="grid-column:1/-1"><span class="big">[!]</span><p>Could not load notebooks: ${e.message}</p></div>`;
   }
 }
 

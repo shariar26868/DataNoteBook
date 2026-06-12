@@ -6,7 +6,12 @@ WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
+    build-essential \
     gcc \
+    g++ \
+    libsndfile1 \
+    libgomp1 \
+    libopenblas-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching

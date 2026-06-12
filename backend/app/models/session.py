@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+
+import pandas as pd
 
 
 @dataclass
@@ -13,4 +15,6 @@ class SessionData:
     row_count: int = 0
     sample_rows: List[Dict[str, Any]] = field(default_factory=list)
     chat_history: List[Dict[str, str]] = field(default_factory=list)
+    cached_df: Optional[pd.DataFrame] = None
+    kernel_ns: Dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.utcnow)
