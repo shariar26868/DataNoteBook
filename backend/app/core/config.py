@@ -2,8 +2,9 @@ from pydantic_settings import BaseSettings
 from typing import List
 from pathlib import Path
 
-# Resolve .env from project root (one level above backend/)
-_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+# Resolve .env from the backend folder (where .env currently lives)
+# config.py is at backend/app/core/config.py, so parents[2] -> backend
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):

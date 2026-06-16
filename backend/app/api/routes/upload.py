@@ -1,9 +1,15 @@
 from fastapi import APIRouter, UploadFile, File, Response, Request, HTTPException, Query
+from pydantic import BaseModel
 from app.services.dataset_service import handle_upload, load_dataframe
 from app.core.session import get_session
 from app.core.config import settings
 
 router = APIRouter()
+
+
+class SelectDatasetRequest(BaseModel):
+    filename: str
+
 
 
 @router.post("/upload")
@@ -27,6 +33,42 @@ async def upload_dataset(file: UploadFile = File(...), response: Response = None
         "columns": session.columns,
         "dtypes": session.dtypes,
         "sample": session.sample_rows,
+    }
+
+
+@router.post("/upload/select")
+async def select_dataset(req: SelectDatasetRequest, response: Response):
+    """
+    Switch the active dataset session to the one matching the given filename.
+    """
+    from app.core.session import _store
+    # Find session with matching filename
+    target_session = None
+    for session in _store.values():
+        if session.filename == req.filename:
+            target_session = session
+            break
+
+    if not target_session:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Dataset {req.filename} session not found. Please upload it again.",
+        )
+
+    response.set_cookie(
+        key="session_id",
+        value=target_session.session_id,
+        httponly=True,
+        samesite="lax",
+        max_age=settings.SESSION_TTL_MINUTES * 60,
+    )
+    return {
+        "filename": target_session.filename,
+        "row_count": target_session.row_count,
+        "column_count": len(target_session.columns),
+        "columns": target_session.columns,
+        "dtypes": target_session.dtypes,
+        "sample": target_session.sample_rows,
     }
 
 

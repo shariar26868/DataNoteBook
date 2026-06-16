@@ -1,3 +1,77 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Packages
+*.egg-info/
+.eggs/
+dist/
+build/
+pip-wheel-metadata/
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+backend/.venv/
+
+# ---- Environment files / secrets ----
+.env
+backend/.env
+.env.*
+
+# ---- Testing / coverage ----
+.coverage
+.coverage.*
+.pytest_cache/
+htmlcov/
+
+# ---- IDEs / editors ----
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ---- OS files ----
+.DS_Store
+Thumbs.db
+
+# ---- Logs ----
+logs/
+*.log
+
+# ---- Uploads & user data ----
+uploads/
+backend/uploads/
+
+# ---- Databases ----
+*.sqlite3
+*.db
+
+# ---- AWS / credentials ----
+.aws/
+
+# ---- Node ----
+node_modules/
+
+# ---- Frontend builds ----
+frontend/dist/
+
+# ---- Jupyter ----
+.ipynb_checkpoints
+
+# ---- Caches / type checking ----
+.mypy_cache/
+.pyre/
+
+# ---- Misc ----
+*.lock
+*.pot
+*.mo
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
