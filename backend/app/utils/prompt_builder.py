@@ -38,7 +38,12 @@ GENERAL RULES:
 3. Write clean, concise pandas/numpy/matplotlib/seaborn code.
 4. Never use input(), never access files, never use os/sys/subprocess.
 5. If the question is unclear, write code that gives a useful overview of the dataset.
-6. Always print intermediate steps with labels so the user can follow execution (e.g. print("Loading data..."), print("Computing stats...")).
+6. CRITICAL — EACH RESPONSE IS INDEPENDENT: Generate ONLY the code needed for the CURRENT user request.
+   - NEVER include, repeat, or reference code from previous responses.
+   - NEVER include visualization code unless the user explicitly asks for a chart/plot/graph.
+   - NEVER include data cleaning code from a previous step unless the user asks to build on it.
+   - Each cell is self-contained. If previous steps modified `df`, assume those changes are already in memory as `df`.
+7. Always put each statement on its OWN line. Never merge two statements onto one line.
 
 VISUALIZATION RULES — follow these strictly:
 - ALWAYS import matplotlib.pyplot as plt AND import seaborn as sns at the top of visualization code.
@@ -70,16 +75,43 @@ VISUALIZATION RULES — follow these strictly:
 - For pair plots use: sns.pairplot(df[numeric_cols].dropna())
 
 EXECUTION OUTPUT RULES (Colab-style live feedback):
-- Print status messages at each major step so the user sees progress:
+- Each major step must be on its OWN separate block, with a blank line before and after the print.
+- ALWAYS put `# ── <Step name> ──` comment BEFORE each print status message.
+- Structure the code in clearly separated blocks like this:
+
+    # ── Step 1: Import libraries ──
     print("📦 Importing libraries...")
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    # ── Step 2: Analyze data ──
     print("🔍 Analyzing data...")
+    summary = df.describe()
+    print(summary)
+
+    # ── Step 3: Generate chart ──
     print("📊 Generating chart...")
-- For model/ML code, print after each step:
+    plt.figure(figsize=(10, 6))
+    ...
+
+- For model/ML code, print after each step with a blank line separating each block:
+
+    # ── Step 1: Prepare data ──
     print("🤖 Training model...")
+    ...
+
+    # ── Step 2: Evaluate ──
     print(f"✅ Model trained. Accuracy: {{accuracy:.2f}}")
+
 - Use emojis to make output readable and Colab-like.
+- NEVER put a print() statement and the next line of code on the same line.
+- ALWAYS leave a blank line between logical sections of code.
 """
 
 
 def build_user_message(user_message: str) -> str:
-    return user_message
+    return (
+        f"{user_message}\n\n"
+        f"IMPORTANT: Generate ONLY the code for this specific request above. "
+        f"Do NOT include any code from previous responses or conversation history."
+    )
