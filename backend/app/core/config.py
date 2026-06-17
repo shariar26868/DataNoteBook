@@ -3,8 +3,8 @@ from typing import List
 from pathlib import Path
 
 # Resolve .env from project root (one level above backend/)
-_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
-
+# _ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
+_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
@@ -28,15 +28,14 @@ class Settings(BaseSettings):
 
     SESSION_TTL_MINUTES: int = 60
 
-    # AWS S3
-    AWS_ACCESS_KEY_ID: str = ""
-    AWS_SECRET_ACCESS_KEY: str = ""
-    AWS_REGION: str = "us-east-1"
-    S3_BUCKET_NAME: str = ""
-    S3_UPLOADS_PREFIX: str = "uploads"
-    S3_IMAGES_PREFIX: str = "images"
-    S3_NOTEBOOKS_PREFIX: str = "notebooks"
-    S3_PRESIGNED_URL_EXPIRY: int = 3600  # seconds
+    # Azure Vault API
+    VAULT_API_BASE_URL: str = "https://qual-be.hcloud.q2labs.ai"
+    VAULT_EMAIL: str = ""
+    VAULT_PASSWORD: str = ""
+    VAULT_STORAGE_LOCATION: str = ""
+
+    # Local image storage (for serving chart images to frontend)
+    IMAGES_DIR: str = "uploads/images"
 
     class Config:
         env_file = str(_ENV_FILE)
