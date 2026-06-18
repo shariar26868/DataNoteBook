@@ -10,11 +10,21 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
-      # Add your environment variables here
-      # - DATABASE_URL=
-      # - AWS_ACCESS_KEY_ID=
-      # - AWS_SECRET_ACCESS_KEY=
-      # - OPENAI_API_KEY=
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o}
+      - MAX_TOKENS=${MAX_TOKENS:-1500}
+      - HOST=0.0.0.0
+      - PORT=8000
+      - DEBUG=False
+      - UPLOAD_DIR=uploads
+      - MAX_FILE_SIZE_MB=50
+      - SESSION_TTL_MINUTES=60
+      - VAULT_API_BASE_URL=${VAULT_API_BASE_URL}
+      - VAULT_EMAIL=${VAULT_EMAIL}
+      - VAULT_PASSWORD=${VAULT_PASSWORD}
+      - VAULT_STORAGE_LOCATION=${VAULT_STORAGE_LOCATION}
+    env_file:
+      - .env
     volumes:
       - ./backend:/app
       - ./backend/uploads:/app/uploads

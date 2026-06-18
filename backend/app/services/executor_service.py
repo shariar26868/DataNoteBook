@@ -2,19 +2,58 @@ import time
 import traceback
 import io
 import sys
+import os
 import uuid
 import threading
 import queue
+import asyncio
 import pandas as pd
 import numpy as np
 import matplotlib
 import ast
 from typing import Optional
+from pathlib import Path
 
 from app.models.session import SessionData
 from app.services.dataset_service import load_dataframe
-from app.services.s3_service import upload_bytes_to_s3, generate_presigned_url
+from app.services.vault_service import get_vault_client
 from app.core.config import settings
+
+
+def _save_image_locally(image_id: str, img_bytes: bytes) -> str:
+    """Save chart image to local uploads/images/ dir and return the serve URL."""
+    images_dir = Path(settings.IMAGES_DIR)
+    images_dir.mkdir(parents=True, exist_ok=True)
+    filepath = images_dir / f"{image_id}.png"
+    filepath.write_bytes(img_bytes)
+    return f"/api/images/{image_id}.png"
+
+
+def _upload_image_to_vault_bg(session: Optional[SessionData], image_id: str, img_bytes: bytes):
+    """Upload chart image to Azure via vault in a background thread (fire-and-forget)."""
+    async def _upload():
+        try:
+            vault = get_vault_client()
+            if session and session.vault_project_id and session.vault_folder_id:
+                await vault.upload_file_complete(
+                    filename=f"{image_id}.png",
+                    file_bytes=img_bytes,
+                    project_id=session.vault_project_id,
+                    folder_id=session.vault_folder_id,
+                    content_type="image/png",
+                )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"[Vault] Image upload failed (non-critical): {e}")
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(_upload())
+        else:
+            loop.run_until_complete(_upload())
+    except RuntimeError:
+        asyncio.run(_upload())
 
 
 # Blocked keywords for basic sandboxing
@@ -245,7 +284,7 @@ def execute_code_streaming(session: Optional[SessionData], code: str):
                 if _uses_df(code) and "df" in local_ns and isinstance(local_ns["df"], pd.DataFrame):
                     session.cached_df = local_ns["df"]
 
-            # Capture matplotlib figure → S3
+            # Capture matplotlib figure → local + Azure
             fig = None
             for v in local_ns.values():
                 try:
@@ -267,9 +306,11 @@ def execute_code_streaming(session: Optional[SessionData], code: str):
                 img_buf = io.BytesIO()
                 fig.savefig(img_buf, format="png", bbox_inches="tight")
                 img_buf.seek(0)
-                s3_key = f"{settings.S3_IMAGES_PREFIX}/{message_id}.png"
-                upload_bytes_to_s3(img_buf.read(), s3_key, "image/png")
-                image_url = generate_presigned_url(s3_key, settings.S3_PRESIGNED_URL_EXPIRY)
+                img_bytes = img_buf.read()
+                # Save locally for frontend display
+                image_url = _save_image_locally(message_id, img_bytes)
+                # Upload to Azure in background (fire-and-forget)
+                _upload_image_to_vault_bg(session, message_id, img_bytes)
 
             # Close all active pyplot figures to avoid leaking plots into subsequent executions
             try:
@@ -343,7 +384,6 @@ def execute_code_save_image(session: Optional[SessionData], code: str) -> dict:
     error = None
     start = time.time()
     image_url = None
-    s3_image_key = None
     message_id = str(uuid.uuid4())
 
     try:
@@ -377,9 +417,10 @@ def execute_code_save_image(session: Optional[SessionData], code: str) -> dict:
             fig.savefig(img_buf, format="png", bbox_inches="tight")
             img_buf.seek(0)
             img_bytes = img_buf.read()
-            s3_image_key = f"{settings.S3_IMAGES_PREFIX}/{message_id}.png"
-            upload_bytes_to_s3(img_bytes, s3_image_key, "image/png")
-            image_url = generate_presigned_url(s3_image_key, settings.S3_PRESIGNED_URL_EXPIRY)
+            # Save locally for frontend display
+            image_url = _save_image_locally(message_id, img_bytes)
+            # Upload to Azure in background
+            _upload_image_to_vault_bg(session, message_id, img_bytes)
 
         # Close all active pyplot figures to avoid leaking plots into subsequent executions
         try:
@@ -402,7 +443,6 @@ def execute_code_save_image(session: Optional[SessionData], code: str) -> dict:
     return {
         "message_id": message_id,
         "image_url": image_url,
-        "s3_key": s3_image_key,
         "output": printed or None,
         "execution_time_ms": elapsed,
     }
