@@ -3,8 +3,7 @@ from typing import List
 from pathlib import Path
 
 # Resolve .env from project root (one level above backend/)
-# _ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
-_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+_ENV_FILE = Path(__file__).resolve().parents[3] / ".env"
 
 class Settings(BaseSettings):
     HOST: str = "0.0.0.0"

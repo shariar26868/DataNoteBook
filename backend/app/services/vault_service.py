@@ -73,7 +73,12 @@ class VaultClient:
         return token
 
     async def _request(self, method: str, url: str, **kwargs) -> dict:
-        """Make an authenticated request with auto-retry on 401."""
+        """Make an authenticated request, auto-login if no token, auto-retry on 401."""
+        # Auto-login if not authenticated yet
+        if not self._token:
+            logger.info("[Vault] No token found, logging in...")
+            await self.login()
+
         resp = await self._client.request(method, url, headers=self._headers, **kwargs)
 
         # Auto re-login on 401
