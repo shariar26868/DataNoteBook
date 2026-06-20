@@ -20,7 +20,7 @@ class VaultClient:
     def __init__(self):
         self._token: Optional[str] = None
         self._base_url = settings.VAULT_API_BASE_URL.rstrip("/")
-        self._client = httpx.AsyncClient(timeout=60.0)
+        self._client = httpx.AsyncClient(timeout=60.0, follow_redirects=True)
 
     @property
     def _headers(self) -> dict:
@@ -213,26 +213,36 @@ class VaultClient:
 
     # --- New Notebook Migration Methods ---
 
-    async def list_resources(self, parent_id: Optional[str] = None) -> list:
+    async def list_resources(self, parent_id: Optional[str] = None, project_id: Optional[str] = None, limit: int = 1000) -> list:
         """
         Get List of Vault Resources.
-        Assuming endpoint: GET /vault_resources/?parent={parent_id}
         """
         url = f"{self._base_url}/vault_resources/"
-        params = {}
+        params = {"limit": limit}
         if parent_id:
             params["parent"] = parent_id
+        if project_id:
+            params["project"] = project_id
         
-        logger.info(f"[Vault] Listing resources for parent={parent_id}")
+        logger.info(f"[Vault] Listing resources for parent={parent_id} project={project_id} (limit={limit})")
         result = await self._request("GET", url, params=params)
         return result.get("data", [])
+
+    async def list_projects(self, limit: int = 1000) -> list:
+        """
+        List all projects in the vault.
+        """
+        url = f"{self._base_url}/projects/"
+        logger.info(f"[Vault] Listing projects (limit={limit})")
+        result = await self._request("GET", url, params={"limit": limit})
+        return result.get("data", result)
 
     async def get_resource(self, resource_id: str) -> dict:
         """
         Get Detail of a Vault Resource.
-        Assuming endpoint: GET /vault_resources/{id}/
+        Assuming endpoint: GET /vault_resources/{id}
         """
-        url = f"{self._base_url}/vault_resources/{resource_id}/"
+        url = f"{self._base_url}/vault_resources/{resource_id}"
         logger.info(f"[Vault] Fetching resource detail for id={resource_id}")
         result = await self._request("GET", url)
         return result.get("data", result)
@@ -260,9 +270,9 @@ class VaultClient:
     async def delete_resource(self, resource_id: str) -> dict:
         """
         Delete a Vault Resource.
-        Assuming endpoint: DELETE /vault_resources/{id}/
+        Assuming endpoint: DELETE /vault_resources/{id}
         """
-        url = f"{self._base_url}/vault_resources/{resource_id}/"
+        url = f"{self._base_url}/vault_resources/{resource_id}"
         logger.info(f"[Vault] Deleting resource id={resource_id}")
         result = await self._request("DELETE", url)
         return result.get("data", result)
@@ -289,37 +299,113 @@ class VaultClient:
 
     async def setup_global_notebooks_storage(self) -> tuple[str, str]:
         """
-        Create a global project + folder for notebooks.
+        Create or retrieve a global project + folder for notebooks.
         Returns (project_id, folder_id).
         """
         if not self._token:
             await self.login()
 
-        # In a real app we'd list projects and folders to avoid duplicates,
-        # but create_project/create_folder might return existing if they match by name.
-        # This implementation blindly creates them or relies on the backend to deduplicate.
-        project_data = await self.create_project(name="DataNotebook - Global")
-        project_id = project_data["id"]
+        # Check if project already exists
+        projects = await self.list_projects()
+        project_id = None
+        for p in projects:
+            if p.get("name") == "DataNotebook - Global":
+                project_id = p.get("id")
+                break
 
-        folder_data = await self.create_folder(name="notebooks", project_id=project_id)
-        folder_id = folder_data["id"]
+        if not project_id:
+            try:
+                project_data = await self.create_project(name="DataNotebook - Global")
+                project_id = project_data["id"]
+            except httpx.HTTPStatusError as e:
+                # Fallback / retry in case of a race condition
+                if e.response.status_code == 400 and "ALREADY_EXISTS" in e.response.text:
+                    projects = await self.list_projects()
+                    for p in projects:
+                        if p.get("name") == "DataNotebook - Global":
+                            project_id = p.get("id")
+                            break
+                if not project_id:
+                    raise
+
+        # Check if folder already exists in the project
+        resources = await self.list_resources(project_id=project_id)
+        folder_id = None
+        for r in resources:
+            if r.get("type") == "folder" and r.get("name") == "notebooks":
+                folder_id = r.get("id")
+                break
+
+        if not folder_id:
+            try:
+                folder_data = await self.create_folder(name="notebooks", project_id=project_id)
+                folder_id = folder_data["id"]
+            except httpx.HTTPStatusError as e:
+                # Fallback / retry in case of a race condition
+                if e.response.status_code == 400 and "ALREADY_EXISTS" in e.response.text:
+                    resources = await self.list_resources(project_id=project_id)
+                    for r in resources:
+                        if r.get("type") == "folder" and r.get("name") == "notebooks":
+                            folder_id = r.get("id")
+                            break
+                if not folder_id:
+                    raise
 
         return project_id, folder_id
 
     async def setup_session_storage(self, session_name: str) -> tuple[str, str]:
         """
-        Create a project + folder for a new notebook session.
+        Create or retrieve a project + folder for a new notebook session.
         Returns (project_id, folder_id).
         """
         # Ensure we're logged in
         if not self._token:
             await self.login()
 
-        project_data = await self.create_project(name=f"DataNotebook - {session_name}")
-        project_id = project_data["id"]
+        # Check if project already exists
+        target_project_name = f"DataNotebook - {session_name}"
+        projects = await self.list_projects()
+        project_id = None
+        for p in projects:
+            if p.get("name") == target_project_name:
+                project_id = p.get("id")
+                break
 
-        folder_data = await self.create_folder(name=session_name, project_id=project_id)
-        folder_id = folder_data["id"]
+        if not project_id:
+            try:
+                project_data = await self.create_project(name=target_project_name)
+                project_id = project_data["id"]
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 400 and "ALREADY_EXISTS" in e.response.text:
+                    projects = await self.list_projects()
+                    for p in projects:
+                        if p.get("name") == target_project_name:
+                            project_id = p.get("id")
+                            break
+                if not project_id:
+                    raise
+
+        # Check if folder already exists in the project
+        resources = await self.list_resources(project_id=project_id)
+        folder_id = None
+        for r in resources:
+            if r.get("type") == "folder" and r.get("name") == session_name:
+                folder_id = r.get("id")
+                break
+
+        if not folder_id:
+            try:
+                folder_data = await self.create_folder(name=session_name, project_id=project_id)
+                folder_id = folder_data["id"]
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 400 and "ALREADY_EXISTS" in e.response.text:
+                    resources = await self.list_resources(project_id=project_id)
+                    for r in resources:
+                        if r.get("type") == "folder" and r.get("name") == session_name:
+                            folder_id = r.get("id")
+                            break
+                if not folder_id:
+                    raise
 
         return project_id, folder_id
 

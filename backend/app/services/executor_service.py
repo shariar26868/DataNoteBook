@@ -68,10 +68,28 @@ def _is_safe(code: str) -> tuple[bool, str]:
     return True, ""
 
 
-def _uses_df(code: str) -> bool:
-    """Check if code explicitly references 'df' variable."""
+def infer_df_name(filename: str) -> str:
+    """Convert raw filenames (e.g. people_100.csv) to valid Python identifiers prefixed with df_."""
     import re
-    return bool(re.search(r'\bdf\b', code))
+    # Strip extension
+    base = filename.rsplit('.', 1)[0]
+    # Replace non-alphanumeric characters with underscore
+    sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', base)
+    if sanitized.startswith('df_'):
+        return sanitized
+    return f"df_{sanitized}"
+
+
+def _uses_df(code: str, session: Optional[SessionData] = None) -> bool:
+    """Check if code explicitly references 'df' variable or the dynamic df variable name."""
+    import re
+    if bool(re.search(r'\bdf\b', code)):
+        return True
+    if session and session.filename:
+        df_name = infer_df_name(session.filename)
+        if bool(re.search(r'\b' + re.escape(df_name) + r'\b', code)):
+            return True
+    return False
 
 
 def _exec_code(code: str, local_ns: dict):
@@ -125,7 +143,7 @@ def _build_namespace(session: Optional[SessionData], code: str) -> dict:
     Build execution namespace.
     Only loads the dataset if:
       1. A session exists, AND
-      2. The code actually references 'df'
+      2. The code actually references 'df' or dynamic df name
     Always provides pd, np, matplotlib imports.
     If a session exists, reuse its kernel namespace so variables persist across cells.
     """
@@ -136,9 +154,13 @@ def _build_namespace(session: Optional[SessionData], code: str) -> dict:
     else:
         ns = {"pd": pd, "np": np}
 
-    if session is not None and _uses_df(code):
+    if session is not None and _uses_df(code, session):
         try:
-            ns["df"] = load_dataframe(session)
+            df = load_dataframe(session)
+            ns["df"] = df
+            if session.filename:
+                df_name = infer_df_name(session.filename)
+                ns[df_name] = df
         except Exception as e:
             raise RuntimeError(f"Could not load dataset: {str(e)}")
 
@@ -198,8 +220,24 @@ def execute_code(session: Optional[SessionData], code: str) -> dict:
 
         # Persist kernel state and dataset modifications between cells.
         if session is not None:
+            if session.filename:
+                df_name = infer_df_name(session.filename)
+                current_df = local_ns.get("df")
+                current_df_name = local_ns.get(df_name)
+                if current_df is not current_df_name:
+                    orig_df = initial_ns.get("df")
+                    if current_df is not orig_df and current_df_name is orig_df:
+                        local_ns[df_name] = current_df
+                    elif current_df_name is not orig_df and current_df is orig_df:
+                        local_ns["df"] = current_df_name
+                    else:
+                        if current_df is not None:
+                            local_ns[df_name] = current_df
+                        elif current_df_name is not None:
+                            local_ns["df"] = current_df_name
+
             session.kernel_ns = local_ns
-            if _uses_df(code) and "df" in local_ns and isinstance(local_ns["df"], pd.DataFrame):
+            if _uses_df(code, session) and "df" in local_ns and isinstance(local_ns["df"], pd.DataFrame):
                 session.cached_df = local_ns["df"]
 
         # Close all active pyplot figures to avoid leaking plots into subsequent executions
@@ -280,8 +318,24 @@ def execute_code_streaming(session: Optional[SessionData], code: str):
                 result_obj = _capture_result(local_ns, initial_keys)
 
             if session is not None:
+                if session.filename:
+                    df_name = infer_df_name(session.filename)
+                    current_df = local_ns.get("df")
+                    current_df_name = local_ns.get(df_name)
+                    if current_df is not current_df_name:
+                        orig_df = initial_ns.get("df")
+                        if current_df is not orig_df and current_df_name is orig_df:
+                            local_ns[df_name] = current_df
+                        elif current_df_name is not orig_df and current_df is orig_df:
+                            local_ns["df"] = current_df_name
+                        else:
+                            if current_df is not None:
+                                local_ns[df_name] = current_df
+                            elif current_df_name is not None:
+                                local_ns["df"] = current_df_name
+
                 session.kernel_ns = local_ns
-                if _uses_df(code) and "df" in local_ns and isinstance(local_ns["df"], pd.DataFrame):
+                if _uses_df(code, session) and "df" in local_ns and isinstance(local_ns["df"], pd.DataFrame):
                     session.cached_df = local_ns["df"]
 
             # Capture matplotlib figure → local + Azure

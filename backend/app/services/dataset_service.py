@@ -113,11 +113,14 @@ async def handle_upload(file: UploadFile) -> SessionData:
     create_session(session_id, session)
     return session
 
-async def handle_vault_file(file_id: str) -> SessionData:
+async def handle_vault_file(file_id: str, vault=None) -> SessionData:
     """
     Download file from Vault, parse it for metadata, and create session.
+    Accepts an optional pre-authenticated VaultClient. Falls back to the
+    global singleton (which will auto-login with service credentials).
     """
-    vault = get_vault_client()
+    if vault is None:
+        vault = get_vault_client()
     
     # 1. Get file details
     try:
