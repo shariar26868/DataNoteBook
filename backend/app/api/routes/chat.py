@@ -25,4 +25,6 @@ async def chat(request: ChatRequest, session_id: Optional[str] = Cookie(None)):
     return ChatResponse(
         explanation=result["explanation"],
         code=result["code"],
+        out_of_scope=result.get("out_of_scope", False),
+        soft_message=result.get("soft_message"),
     )

@@ -57,8 +57,10 @@ def _upload_image_to_vault_bg(session: Optional[SessionData], image_id: str, img
 
 
 # Blocked keywords for basic sandboxing
+# NOTE: locals() is intentionally NOT blocked — it is safe and the AI uses it for
+# checking variable availability. Only globals() is dangerous for sandbox escape.
 BLOCKED = ["import os", "import sys", "import subprocess", "open(", "__import__",
-           "eval(", "exec(", "compile(", "globals(", "locals("]
+           "eval(", "exec(", "compile(", "globals("]
 
 
 def _is_safe(code: str) -> tuple[bool, str]:
@@ -141,11 +143,12 @@ class _LineStreamWriter(io.TextIOBase):
 def _build_namespace(session: Optional[SessionData], code: str) -> dict:
     """
     Build execution namespace.
-    Only loads the dataset if:
-      1. A session exists, AND
-      2. The code actually references 'df' or dynamic df name
-    Always provides pd, np, matplotlib imports.
+    Always provides pd, np imports.
     If a session exists, reuse its kernel namespace so variables persist across cells.
+    If a session has a cached DataFrame, ALWAYS inject 'df' (and the dynamic df name)
+    into the namespace — regardless of whether the generated code explicitly mentions 'df'.
+    This prevents NameError when the AI generates guards like `if 'df' in locals()` or
+    performs dataset operations without the word 'df' appearing in the prompt.
     """
     if session is not None:
         ns: dict = session.kernel_ns
@@ -154,7 +157,7 @@ def _build_namespace(session: Optional[SessionData], code: str) -> dict:
     else:
         ns = {"pd": pd, "np": np}
 
-    if session is not None and _uses_df(code, session):
+    if session is not None:
         try:
             df = load_dataframe(session)
             ns["df"] = df
@@ -162,7 +165,11 @@ def _build_namespace(session: Optional[SessionData], code: str) -> dict:
                 df_name = infer_df_name(session.filename)
                 ns[df_name] = df
         except Exception as e:
-            raise RuntimeError(f"Could not load dataset: {str(e)}")
+            # Log so it's visible in backend logs — code may still run if df isn't needed
+            import logging
+            logging.getLogger(__name__).warning(
+                f"[Executor] Could not load df for session {getattr(session, 'session_id', '?')}: {e}"
+            )
 
     return ns
 

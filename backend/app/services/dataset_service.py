@@ -200,13 +200,53 @@ async def handle_vault_file(file_id: str, vault=None) -> SessionData:
 def load_dataframe(session: SessionData) -> pd.DataFrame:
     """
     Return the session's cached DataFrame.
-    Since Azure presigned URL is write-only, we rely on the in-memory cache
-    that was populated during upload.
+    If the in-memory cache is missing (e.g. after a worker restart or memory pressure),
+    attempt a synchronous re-download from Azure Vault using the session's vault_file_id.
     """
     if session.cached_df is not None:
         return session.cached_df
 
+    # ── Fallback: re-download from Vault ──────────────────────────────────────
+    if session.vault_file_id:
+        import asyncio
+        import logging
+        log = logging.getLogger(__name__)
+        log.warning(
+            f"[Session {session.session_id}] cached_df is None for '{session.filename}'. "
+            f"Attempting re-download from Vault (file_id={session.vault_file_id})..."
+        )
+        try:
+            from app.services.vault_service import get_vault_client
+            vault = get_vault_client()
+
+            # Run the async download synchronously
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        future = pool.submit(asyncio.run, vault.download_resource(session.vault_file_id))
+                        raw_bytes = future.result(timeout=30)
+                else:
+                    raw_bytes = loop.run_until_complete(vault.download_resource(session.vault_file_id))
+            except RuntimeError:
+                raw_bytes = asyncio.run(vault.download_resource(session.vault_file_id))
+
+            ext = Path(session.filename).suffix.lower()
+            buf = io.BytesIO(raw_bytes)
+            if ext == ".csv":
+                df = pd.read_csv(buf)
+            else:
+                df = pd.read_excel(buf)
+
+            session.cached_df = df  # repopulate cache
+            log.info(f"[Session {session.session_id}] Re-download successful — {len(df)} rows loaded.")
+            return df
+
+        except Exception as e:
+            log.error(f"[Session {session.session_id}] Vault re-download failed: {e}")
+
     raise RuntimeError(
-        "DataFrame not cached. The dataset may have been lost due to session expiry. "
-        "Please re-upload the file."
+        f"DataFrame for '{session.filename}' is not cached and could not be re-downloaded. "
+        "Please re-upload or re-select the file."
     )

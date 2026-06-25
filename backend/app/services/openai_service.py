@@ -13,7 +13,10 @@ client = AsyncOpenAI(
 async def generate_code(session: SessionData, user_message: str) -> dict:
     """
     Call OpenAI with the dataset context and user question.
-    Returns {"explanation": str, "code": str}
+    Returns one of:
+      {"explanation": str, "code": str}                            — normal response
+      {"explanation": "", "code": "", "out_of_scope": True,
+       "soft_message": str}                                        — off-topic question
     """
     system_prompt = build_system_prompt(
         filename=session.filename,
@@ -40,17 +43,35 @@ async def generate_code(session: SessionData, user_message: str) -> dict:
     raw = response.choices[0].message.content or ""
     parsed = _parse_response(raw)
 
-    # Store concise history — explanation only, no code block
+    # Store concise history — skip history entry for out-of-scope so it doesn't
+    # pollute context with irrelevant exchanges.
     session.chat_history.append({"role": "user", "content": user_message})
-    session.chat_history.append({
-        "role": "assistant",
-        "content": f"EXPLANATION: {parsed['explanation']}\n(Code was generated and executed separately.)"
-    })
+    if parsed.get("out_of_scope"):
+        session.chat_history.append({
+            "role": "assistant",
+            "content": f"[Out of scope] {parsed['soft_message']}"
+        })
+    else:
+        session.chat_history.append({
+            "role": "assistant",
+            "content": f"EXPLANATION: {parsed['explanation']}\n(Code was generated and executed separately.)"
+        })
 
     return parsed
 
 
 def _parse_response(raw: str) -> dict:
+    # ── Check for out-of-scope response first ──
+    oos_match = re.match(r"OUT_OF_SCOPE:\s*(.+)", raw.strip(), re.IGNORECASE | re.DOTALL)
+    if oos_match:
+        soft_message = oos_match.group(1).strip().split("\n")[0]  # first line only
+        return {
+            "explanation": "",
+            "code": "",
+            "out_of_scope": True,
+            "soft_message": soft_message,
+        }
+
     explanation = ""
     code = ""
 
@@ -72,7 +93,7 @@ def _parse_response(raw: str) -> dict:
     if code:
         code = _fix_merged_lines(code)
 
-    return {"explanation": explanation, "code": code}
+    return {"explanation": explanation, "code": code, "out_of_scope": False, "soft_message": None}
 
 
 def _fix_merged_lines(code: str) -> str:

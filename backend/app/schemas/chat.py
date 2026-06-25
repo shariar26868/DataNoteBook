@@ -17,3 +17,5 @@ class ChatResponse(BaseModel):
     explanation: str
     code: str
     options: List[str] = ["Accept and run", "Accept", "Close"]
+    out_of_scope: bool = False
+    soft_message: Optional[str] = None
