@@ -142,19 +142,37 @@
 
 
 
+import os
 import re
 import logging
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, AsyncAzureOpenAI
 from app.core.config import settings
 from app.utils.prompt_builder import build_system_prompt, build_user_message
 from app.models.session import SessionData
 
 logger = logging.getLogger(__name__)
 
-client = AsyncOpenAI(
-    base_url=settings.AZURE_OPENAI_ENDPOINT,
-    api_key=settings.AZURE_OPENAI_API_KEY,
-)
+# Initialize client based on available config
+if settings.AZURE_OPENAI_API_KEY and settings.AZURE_OPENAI_ENDPOINT:
+    # ── Azure OpenAI Configuration ──
+    # Clean the endpoint if it contains '/openai/v1' suffix
+    endpoint = settings.AZURE_OPENAI_ENDPOINT
+    if "/openai/v1" in endpoint:
+        endpoint = endpoint.split("/openai/v1")[0]
+        
+    logger.info(f"[OpenAI] Initializing AsyncAzureOpenAI client with endpoint: {endpoint}")
+    client = AsyncAzureOpenAI(
+        azure_endpoint=endpoint,
+        api_key=settings.AZURE_OPENAI_API_KEY,
+        api_version=settings.AZURE_OPENAI_API_VERSION,
+    )
+else:
+    # ── Standard OpenAI Configuration ──
+    # Fallback to standard OpenAI API (usually gets API key from environment variable OPENAI_API_KEY)
+    logger.info("[OpenAI] Initializing standard AsyncOpenAI client")
+    client = AsyncOpenAI(
+        api_key=os.getenv("OPENAI_API_KEY", ""),
+    )
 
 
 async def generate_code(session: SessionData, user_message: str) -> dict:
