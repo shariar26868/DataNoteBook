@@ -4,7 +4,10 @@ from app.core.config import settings
 from app.utils.prompt_builder import build_system_prompt, build_user_message
 from app.models.session import SessionData
 
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+client = AsyncOpenAI(
+    base_url=settings.AZURE_OPENAI_ENDPOINT,
+    api_key=settings.AZURE_OPENAI_API_KEY,
+)
 
 
 async def generate_code(session: SessionData, user_message: str) -> dict:

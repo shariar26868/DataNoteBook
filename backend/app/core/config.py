@@ -18,8 +18,10 @@ class Settings(BaseSettings):
         "null",
     ]
 
-    OPENAI_API_KEY: str = ""
-    OPENAI_MODEL: str = "gpt-4o"
+    # Azure OpenAI credentials
+    AZURE_OPENAI_ENDPOINT: str = ""
+    AZURE_OPENAI_API_KEY: str = ""
+    OPENAI_MODEL: str = "gpt-4.5"
     MAX_TOKENS: int = 1500
 
     UPLOAD_DIR: str = "uploads"
