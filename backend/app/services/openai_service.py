@@ -32,9 +32,9 @@ async def generate_code(session: SessionData, user_message: str) -> dict:
 
     response = await client.chat.completions.create(
         model=settings.OPENAI_MODEL,
-        max_tokens=settings.MAX_TOKENS,
         temperature=0.2,
         messages=messages,
+        extra_body={"max_completion_tokens": settings.MAX_TOKENS},
     )
 
     raw = response.choices[0].message.content or ""
