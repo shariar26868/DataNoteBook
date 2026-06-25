@@ -1,210 +1,48 @@
-# ---- Python ----
+# ── Python ────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
-*.so
-
-# Packages
+*.pyc
+*.pyo
+*.pyd
+.Python
 *.egg-info/
-.eggs/
 dist/
 build/
-pip-wheel-metadata/
-
-# ---- Virtual environments ----
-.venv/
+.eggs/
 venv/
+.venv/
 env/
-backend/.venv/
+ENV/
 
-# ---- Environment files / secrets ----
+# ── Environment / Secrets ─────────────────────────────────
 .env
-backend/.env
 .env.*
+!.env.example
 
-# ---- Testing / coverage ----
-.coverage
-.coverage.*
-.pytest_cache/
-htmlcov/
+# ── Uploads / Generated files ─────────────────────────────
+backend/uploads/
+backend/images/
 
-# ---- IDEs / editors ----
-.vscode/
-.idea/
-*.sublime-project
-*.sublime-workspace
+# ── Node / Next.js ────────────────────────────────────────
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# ---- OS files ----
+# ── OS ────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# ---- Logs ----
-logs/
-*.log
-
-# ---- Uploads & user data ----
-uploads/
-backend/uploads/
-
-# ---- Databases ----
-*.sqlite3
-*.db
-
-# ---- AWS / credentials ----
-.aws/
-
-# ---- Node ----
-node_modules/
-
-# ---- Frontend builds ----
-frontend/dist/
-
-# ---- Jupyter ----
-.ipynb_checkpoints
-
-# ---- Caches / type checking ----
-.mypy_cache/
-.pyre/
-
-# ---- Misc ----
-*.lock
-*.pot
-*.mo
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# PyInstaller
-*.manifest
-*.spec
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-
-# Translations
-*.mo
-*.pot
-
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
-
-# Flask stuff:
-instance/
-.webassets-cache
-
-# Scrapy stuff:
-.scrapy
-
-# Sphinx documentation
-docs/_build/
-
-# PyBuilder
-target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# IPython
-profile_default/
-ipython_config.py
-
-# pyenv
-.python-version
-
-# pipenv
-Pipfile.lock
-
-# PEP 582
-__pypackages__/
-
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
-
-# IDE
+# ── Editor ────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Project specific
-cookies.txt
-uploads/
-*.db
-*.sqlite
+# ── Logs ──────────────────────────────────────────────────
+*.log
+logs/
