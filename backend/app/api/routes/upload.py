@@ -194,6 +194,19 @@ async def select_dataset(req: SelectDatasetRequest, response: Response):
                 break
 
         if not target_session:
+            from app.core.session import get_sessions_dir, get_session
+            try:
+                for p in get_sessions_dir().glob("*.json"):
+                    session_id = p.stem
+                    if session_id not in _store:
+                        session = get_session(session_id)
+                        if session and session.filename == req.filename:
+                            target_session = session
+                            break
+            except Exception as e:
+                logger.warning(f"Failed to restore session from disk for filename lookup: {e}")
+
+        if not target_session:
             raise HTTPException(
                 status_code=404,
                 detail=f"Dataset '{req.filename}' session not found. Please upload it again.",

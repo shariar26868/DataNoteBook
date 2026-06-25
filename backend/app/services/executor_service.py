@@ -616,10 +616,11 @@ def _exec_code(code: str, local_ns: dict):
     If the last statement is an expression, evaluate it and store the result
     in local_ns["__last_expr_result__"].
     """
+    local_ns.setdefault("__builtins__", __builtins__)
     try:
         tree = ast.parse(code)
     except Exception:
-        exec(code, {"__builtins__": __builtins__}, local_ns)
+        exec(code, local_ns, local_ns)
         return
 
     if not tree.body:
@@ -629,11 +630,11 @@ def _exec_code(code: str, local_ns: dict):
     if isinstance(last_node, ast.Expr):
         tree.body.pop()
         if tree.body:
-            exec(compile(tree, filename="<string>", mode="exec"), {"__builtins__": __builtins__}, local_ns)
-        expr_val = eval(compile(ast.Expression(body=last_node.value), filename="<string>", mode="eval"), {"__builtins__": __builtins__}, local_ns)
+            exec(compile(tree, filename="<string>", mode="exec"), local_ns, local_ns)
+        expr_val = eval(compile(ast.Expression(body=last_node.value), filename="<string>", mode="eval"), local_ns, local_ns)
         local_ns["__last_expr_result__"] = expr_val
     else:
-        exec(code, {"__builtins__": __builtins__}, local_ns)
+        exec(code, local_ns, local_ns)
 
 
 class _LineStreamWriter(io.TextIOBase):

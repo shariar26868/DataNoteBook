@@ -207,6 +207,9 @@ async def generate_code(session: SessionData, user_message: str) -> dict:
                 "content": f"EXPLANATION: {parsed['explanation']}\n(Code was generated and executed separately.)"
             })
 
+        from app.core.session import save_session
+        save_session(session)
+
         return parsed
 
     except Exception as e:
