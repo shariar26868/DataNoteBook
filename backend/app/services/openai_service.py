@@ -32,7 +32,7 @@ async def generate_code(session: SessionData, user_message: str) -> dict:
 
     response = await client.chat.completions.create(
         model=settings.OPENAI_MODEL,
-        max_completion_tokens=settings.MAX_TOKENS,
+        max_tokens=settings.MAX_TOKENS,
         temperature=0.2,
         messages=messages,
     )
