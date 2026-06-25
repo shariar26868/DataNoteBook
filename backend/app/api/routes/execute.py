@@ -61,8 +61,6 @@
 
 
 
-
-
 import json
 import logging
 from typing import Optional
@@ -128,7 +126,18 @@ async def execute_stream(request: ExecuteRequest, session_id: Optional[str] = Co
     """
     session = None
     try:
+        # DEBUG: Log what we received
+        logger.info(f"[Execute/Stream] Received session_id: {session_id}")
+        
         session = get_session(session_id) if session_id else None
+        
+        if session:
+            logger.info(f"[Execute/Stream] Session found: {session.session_id}, "
+                       f"filename='{session.filename}', "
+                       f"cached_df={'available' if session.cached_df is not None else 'None'}")
+        else:
+            logger.info(f"[Execute/Stream] No session found/provided")
+            
     except Exception as e:
         logger.error(f"[Execute/Stream] Session lookup failed: {str(e)}")
         # Return error event stream

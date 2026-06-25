@@ -512,7 +512,6 @@
 
 
 
-
 import time
 import traceback
 import io
@@ -673,21 +672,25 @@ def _build_namespace(session: Optional[SessionData], code: str) -> dict:
         ns.setdefault("np", np)
     else:
         ns = {"pd": pd, "np": np}
+        logger.info("[Executor] No session provided, running in clean namespace")
 
     if session is not None:
+        logger.info(f"[Executor] Session {session.session_id}: filename='{session.filename}', "
+                   f"cached_df={'available' if session.cached_df is not None else 'None'}")
         try:
             df = load_dataframe(session)
             ns["df"] = df
             if session.filename:
                 df_name = infer_df_name(session.filename)
                 ns[df_name] = df
+            logger.info(f"[Executor] Successfully loaded dataframe: {len(df)} rows, {len(df.columns)} columns")
         except RuntimeError as e:
             # Re-raise RuntimeError to be caught by routes
             logger.error(f"[Executor] Failed to load dataset: {e}")
             raise RuntimeError(f"Cannot load dataset: {str(e)}")
         except Exception as e:
             # Any other exception also becomes RuntimeError
-            logger.error(f"[Executor] Unexpected error loading dataset: {e}")
+            logger.error(f"[Executor] Unexpected error loading dataset: {e}", exc_info=True)
             raise RuntimeError(f"Dataset loading failed: {str(e)}")
 
     return ns
