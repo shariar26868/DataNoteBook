@@ -586,6 +586,46 @@ def _is_safe(code: str) -> tuple[bool, str]:
     return True, ""
 
 
+def _is_truncated(code: str) -> bool:
+    """
+    Detect whether generated code appears to be syntactically incomplete
+    (i.e. cut off mid-generation due to hitting the token limit).
+
+    A truncated script will typically end mid-string, mid-function body,
+    mid-argument list, or with an open block that was never closed.
+    Attempting to exec() such code causes SyntaxError crashes at runtime.
+
+    This is a secondary defence — the primary check is finish_reason == 'max_tokens'
+    in openai_service.py.  This guard catches edge cases where truncated code
+    slips through (e.g. direct API calls, test harnesses, retries).
+    """
+    if not code or not code.strip():
+        return False
+
+    # Try to parse the code as a Python AST — if it fails, it's likely truncated
+    try:
+        ast.parse(code)
+        return False  # Parsed successfully — not truncated
+    except SyntaxError:
+        # Could be a real bug in the AI's code, or a truncation.
+        # We do a secondary heuristic: check if the last non-empty line
+        # looks like an incomplete statement.
+        lines = [ln for ln in code.splitlines() if ln.strip()]
+        if not lines:
+            return True
+        last_line = lines[-1].rstrip()
+        # Common truncation signatures:
+        truncation_signs = [
+            last_line.endswith((",", "(", "[", "{", ":", "\\", "+", "-", "*", "/", "=")),
+            last_line.startswith(("def ", "class ", "if ", "for ", "while ", "with ", "try", "except", "elif", "else")) and not last_line.endswith(":"),
+            last_line.count('"') % 2 != 0,   # unmatched double-quote
+            last_line.count("'") % 2 != 0,   # unmatched single-quote
+        ]
+        return any(truncation_signs)
+    except Exception:
+        return False
+
+
 def infer_df_name(filename: str) -> str:
     """Convert raw filenames (e.g people_100.csv) to valid Python identifiers prefixed with df_."""
     import re
@@ -726,6 +766,19 @@ def execute_code(session: Optional[SessionData], code: str) -> dict:
     if not safe:
         return {"error": reason}
 
+    # ── Truncation guard ─────────────────────────────────────────────────────
+    # Refuse to execute code that appears to be cut off mid-generation.
+    # Running a truncated script will cause a SyntaxError or partial side-effects.
+    if _is_truncated(code):
+        logger.warning("[Executor] Refusing to execute truncated/incomplete code.")
+        return {
+            "error": (
+                "⚠️ The generated code appears to be incomplete (possibly cut off due to length). "
+                "Please try a more specific question so the response fits within the token limit."
+            )
+        }
+    # ─────────────────────────────────────────────────────────────────────────
+
     try:
         initial_ns = _build_namespace(session, code)
     except RuntimeError as e:
@@ -818,6 +871,17 @@ def execute_code_streaming(session: Optional[SessionData], code: str):
     if not safe:
         yield ("error", reason)
         return
+
+    # ── Truncation guard ─────────────────────────────────────────────────────
+    if _is_truncated(code):
+        logger.warning("[Executor] Refusing to stream-execute truncated/incomplete code.")
+        yield (
+            "error",
+            "⚠️ The generated code appears to be incomplete (possibly cut off due to length). "
+            "Please try a more specific question so the response fits within the token limit."
+        )
+        return
+    # ─────────────────────────────────────────────────────────────────────────
 
     try:
         matplotlib.use("Agg")
@@ -962,6 +1026,17 @@ def execute_code_save_image(session: Optional[SessionData], code: str) -> dict:
     safe, reason = _is_safe(code)
     if not safe:
         return {"error": reason}
+
+    # ── Truncation guard ─────────────────────────────────────────────────────
+    if _is_truncated(code):
+        logger.warning("[Executor] Refusing to execute truncated/incomplete code (save_image path).")
+        return {
+            "error": (
+                "⚠️ The generated code appears to be incomplete (possibly cut off due to length). "
+                "Please try a more specific question so the response fits within the token limit."
+            )
+        }
+    # ─────────────────────────────────────────────────────────────────────────
 
     try:
         matplotlib.use("Agg")

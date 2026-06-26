@@ -182,6 +182,7 @@ async def generate_code(session: SessionData, user_message: str) -> dict:
       {"explanation": str, "code": str}                            — normal response
       {"explanation": "", "code": "", "out_of_scope": True,
        "soft_message": str}                                        — off-topic question
+      {"explanation": str, "code": "", "truncated": True}         — response cut off at max_tokens
     
     Never raises exceptions — returns parsed response or empty code for errors.
     """
@@ -207,6 +208,36 @@ async def generate_code(session: SessionData, user_message: str) -> dict:
             messages=messages,
             extra_body={"max_completion_tokens": settings.MAX_TOKENS},
         )
+
+        # ── Max-tokens guard ──────────────────────────────────────────────────
+        # If the model stopped because it hit the token limit the generated code
+        # may be syntactically incomplete. Executing a truncated script can crash
+        # the executor. We catch this here and refuse to run it.
+        finish_reason = response.choices[0].finish_reason
+        if finish_reason == "max_tokens":
+            logger.warning(
+                "[OpenAI] Response truncated (finish_reason=max_tokens). "
+                "Skipping code execution to prevent partial-script crash."
+            )
+            truncated_msg = (
+                "⚠️ The generated response was cut off because it was too long. "
+                "Please try asking a more specific or narrower question so the answer fits within the token limit."
+            )
+            session.chat_history.append({"role": "user", "content": user_message})
+            session.chat_history.append({
+                "role": "assistant",
+                "content": f"[Truncated — not executed] {truncated_msg}"
+            })
+            from app.core.session import save_session
+            save_session(session)
+            return {
+                "explanation": truncated_msg,
+                "code": "",
+                "out_of_scope": False,
+                "soft_message": None,
+                "truncated": True,
+            }
+        # ─────────────────────────────────────────────────────────────────────
 
         raw = response.choices[0].message.content or ""
         parsed = _parse_response(raw)
@@ -239,6 +270,7 @@ async def generate_code(session: SessionData, user_message: str) -> dict:
             "out_of_scope": False,
             "soft_message": None,
         }
+
 
 
 def _parse_response(raw: str) -> dict:

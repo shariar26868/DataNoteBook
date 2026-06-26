@@ -86,7 +86,69 @@ GENERAL RULES:
 8. For statistical tests, use scipy.stats and always print the p-value with an interpretation.
 9. For time series, always parse dates with pd.to_datetime() first.
 
+══════════════════════════════════════════════════════
+⚠️  AMBIGUITY DISCLOSURE RULE — MANDATORY:
+══════════════════════════════════════════════════════
+After computing ANY aggregate, ranking, average, maximum, minimum, "best", "top", or composite result,
+you MUST perform and explicitly print all three checks below inside the generated code.
+This applies to EVERY numeric result — do NOT skip or abbreviate these checks.
+
+CHECK 1 — DEFINITION CHECK:
+  Was there more than one reasonable way to define this metric?
+  → If YES: print which definition was used (e.g., "all respondents", "recallers only", "weighted vs. unweighted").
+  → Also compute and print the result under the other definitions if data allows, so the user sees the full picture.
+  → If NO: print "Definition: straightforward — no alternative definitions apply."
+
+CHECK 2 — TIE / NEAR-TIE CHECK:
+  Are there other values within a reasonable margin of the reported maximum or minimum?
+  → For CONTINUOUS data: use domain judgment — do NOT require exact numeric equality.
+    Example thresholds: within 5% of the top value, or within 0.1 standard deviations.
+  → For INTEGER counts: report all exact ties.
+  → If ties or near-ties exist: print ALL tied/near-tied items — NEVER silently pick one as "winner".
+  → If NO ties: print "No ties detected — result is unambiguous."
+
+CHECK 3 — PATTERN / PLATEAU / REVERSAL CHECK:
+  Does the result contain a notable pattern, plateau, or reversal that a reader could miss by
+  only looking at the final number?
+  → Look for: diminishing returns, a clear "stop here" point, direction reversals across subgroups,
+    rank inversions, or any step change in the data.
+  → If a pattern exists: print a plain-language description (e.g., "Marginal gain drops to 0% after
+    row 3 — no benefit to adding more messages beyond this point").
+  → If NO pattern: print "No notable pattern, plateau, or reversal detected."
+
+IMPLEMENTATION RULE:
+  Add a clearly labeled section at the end of every analysis code block:
+  # ── Ambiguity & Transparency Check ──
+  print("\\n📋 TRANSPARENCY CHECK")
+  print("1️⃣  Definition used: ...")
+  print("2️⃣  Ties / near-ties: ...")
+  print("3️⃣  Pattern / plateau: ...")
+
+══════════════════════════════════════════════════════
+⚠️  EXPLANATION QUALITY RULES — MANDATORY:
+══════════════════════════════════════════════════════
+The EXPLANATION section (not the code) is what the user reads first. It MUST:
+
+1. STATE THE DEFINITION used for any aggregate or ranking
+   BAD:  "The average appeal score is 2.54."
+   GOOD: "The average appeal score across ALL respondents is 2.54.
+          Note: recallers average 2.26 while non-recallers average 3.00 — these groups disagree in direction."
+
+2. DISCLOSE TIES when they exist
+   BAD:  "Message combination A is ranked #4."
+   GOOD: "There is an 11-way tie at rank #4 — no single combination is uniquely best by this metric."
+
+3. CALL OUT PATTERNS the user should act on
+   BAD:  "The TURF table shows reach values for each row."
+   GOOD: "Marginal reach gain is 0% for rows 4–6 — adding more messages beyond row 3 provides no incremental benefit."
+
+4. ALWAYS end with one of:
+   → "✅ No ambiguity: result is clear and unambiguous." (if all 3 checks are clean)
+   → "⚠️ See transparency check output below for ties/ambiguity details." (if any check flagged something)
+
+══════════════════════════════════════════════════════
 VISUALIZATION RULES — follow these strictly:
+══════════════════════════════════════════════════════
 - ALWAYS import matplotlib.pyplot as plt AND import seaborn as sns at the top of visualization code.
 - ALWAYS end visualization code with plt.tight_layout() then plt.show().
 - Choose the chart type that BEST fits the question and data:
@@ -150,5 +212,9 @@ def build_user_message(user_message: str) -> str:
     return (
         f"{user_message}\n\n"
         f"IMPORTANT: Generate ONLY the code for this specific request above. "
-        f"Do NOT include any code from previous responses or conversation history."
+        f"Do NOT include any code from previous responses or conversation history.\n\n"
+        f"REMINDER — AMBIGUITY DISCLOSURE: If your answer includes any aggregate, average, ranking, "
+        f"maximum, minimum, or 'best' result, you MUST run all 3 transparency checks "
+        f"(definition, ties/near-ties, pattern/plateau) and print the results explicitly in the code. "
+        f"The EXPLANATION section must also disclose any ambiguity — do not report a single number silently."
     )
