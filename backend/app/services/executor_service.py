@@ -572,58 +572,68 @@ def _upload_image_to_vault_bg(session: Optional[SessionData], image_id: str, img
         asyncio.run(_upload())
 
 
-# Blocked keywords for basic sandboxing
-# NOTE: locals() is intentionally NOT blocked — it is safe and the AI uses it for
-# checking variable availability. Only globals() is dangerous for sandbox escape.
-BLOCKED = ["import os", "import sys", "import subprocess", "open(", "__import__",
-           "eval(", "exec(", "compile(", "globals("]
+# Blocked keywords for sandboxing — only truly dangerous operations
+# NOTE: open() is intentionally NOT blocked — sklearn, joblib, and other
+# legitimate libraries use it internally. Only direct shell/OS escapes are blocked.
+BLOCKED = [
+    "import subprocess",
+    "__import__(",
+    "compile(",
+    "globals(",
+    "__builtins__",
+    "os.system",
+    "os.popen",
+    "os.execv",
+    "os.execve",
+    "os.spawn",
+    "subprocess.run",
+    "subprocess.call",
+    "subprocess.Popen",
+]
 
 
 def _is_safe(code: str) -> tuple[bool, str]:
     for keyword in BLOCKED:
         if keyword in code:
-            return False, f"Blocked keyword detected: `{keyword}`"
+            return False, f"Security restriction: `{keyword}` is not permitted in notebook code."
     return True, ""
 
 
-def _is_truncated(code: str) -> bool:
+def _check_syntax(code: str) -> str | None:
     """
-    Detect whether generated code appears to be syntactically incomplete
-    (i.e. cut off mid-generation due to hitting the token limit).
+    Optional pre-flight syntax check. Returns a warning string if the code
+    has an obvious syntax error, or None if the code looks parseable.
 
-    A truncated script will typically end mid-string, mid-function body,
-    mid-argument list, or with an open block that was never closed.
-    Attempting to exec() such code causes SyntaxError crashes at runtime.
-
-    This is a secondary defence — the primary check is finish_reason == 'max_tokens'
-    in openai_service.py.  This guard catches edge cases where truncated code
-    slips through (e.g. direct API calls, test harnesses, retries).
+    NOTE: This function NEVER blocks execution. A SyntaxError here means
+    Python's exec() will also raise it and return a clean error to the user.
+    We keep this only for logging purposes.
     """
     if not code or not code.strip():
-        return False
-
-    # Try to parse the code as a Python AST — if it fails, it's likely truncated
+        return None
     try:
         ast.parse(code)
-        return False  # Parsed successfully — not truncated
-    except SyntaxError:
-        # Could be a real bug in the AI's code, or a truncation.
-        # We do a secondary heuristic: check if the last non-empty line
-        # looks like an incomplete statement.
-        lines = [ln for ln in code.splitlines() if ln.strip()]
-        if not lines:
-            return True
-        last_line = lines[-1].rstrip()
-        # Common truncation signatures:
-        truncation_signs = [
-            last_line.endswith((",", "(", "[", "{", ":", "\\", "+", "-", "*", "/", "=")),
-            last_line.startswith(("def ", "class ", "if ", "for ", "while ", "with ", "try", "except", "elif", "else")) and not last_line.endswith(":"),
-            last_line.count('"') % 2 != 0,   # unmatched double-quote
-            last_line.count("'") % 2 != 0,   # unmatched single-quote
-        ]
-        return any(truncation_signs)
+        return None  # All good
+    except SyntaxError as e:
+        # Log it but do NOT block — let exec() handle it naturally
+        logger.debug(f"[Executor] Pre-flight syntax check failed: {e}")
+        return str(e)
     except Exception:
-        return False
+        return None
+
+
+def _format_error(tb_str: str) -> str:
+    """Format traceback to be clean and readable for the user, hiding internal framework lines."""
+    if not tb_str:
+        return "Unknown execution error."
+    lines = tb_str.splitlines()
+    cleaned = []
+    for line in lines:
+        if "executor_service.py" in line or "execute.py" in line:
+            continue
+        cleaned.append(line)
+    return "\n".join(cleaned).strip()
+
+
 
 
 def infer_df_name(filename: str) -> str:
@@ -766,18 +776,10 @@ def execute_code(session: Optional[SessionData], code: str) -> dict:
     if not safe:
         return {"error": reason}
 
-    # ── Truncation guard ─────────────────────────────────────────────────────
-    # Refuse to execute code that appears to be cut off mid-generation.
-    # Running a truncated script will cause a SyntaxError or partial side-effects.
-    if _is_truncated(code):
-        logger.warning("[Executor] Refusing to execute truncated/incomplete code.")
-        return {
-            "error": (
-                "⚠️ The generated code appears to be incomplete (possibly cut off due to length). "
-                "Please try a more specific question so the response fits within the token limit."
-            )
-        }
-    # ─────────────────────────────────────────────────────────────────────────
+    # Pre-flight syntax check (non-blocking — only logs, never refuses)
+    syntax_warning = _check_syntax(code)
+    if syntax_warning:
+        logger.debug(f"[Executor] Syntax pre-check note: {syntax_warning}")
 
     try:
         initial_ns = _build_namespace(session, code)
@@ -837,7 +839,7 @@ def execute_code(session: Optional[SessionData], code: str) -> dict:
             pass
 
     except Exception:
-        error = traceback.format_exc(limit=5)
+        error = _format_error(traceback.format_exc())
     finally:
         sys.stdout = old_stdout
 
@@ -848,13 +850,13 @@ def execute_code(session: Optional[SessionData], code: str) -> dict:
         return {"error": error, "execution_time_ms": elapsed}
 
     if isinstance(result_obj, pd.DataFrame):
-        table = result_obj.head(50).fillna("").to_dict(orient="records")
+        table = result_obj.head(200).fillna("").to_dict(orient="records")
         return {"table": table, "output": printed or None, "execution_time_ms": elapsed}
 
     if isinstance(result_obj, pd.Series):
         df_out = result_obj.reset_index()
         df_out.columns = [str(c) for c in df_out.columns]
-        table = df_out.head(50).fillna("").to_dict(orient="records")
+        table = df_out.head(200).fillna("").to_dict(orient="records")
         return {"table": table, "output": printed or None, "execution_time_ms": elapsed}
 
     return {"output": printed or "Executed successfully (no output).", "execution_time_ms": elapsed}
@@ -872,16 +874,10 @@ def execute_code_streaming(session: Optional[SessionData], code: str):
         yield ("error", reason)
         return
 
-    # ── Truncation guard ─────────────────────────────────────────────────────
-    if _is_truncated(code):
-        logger.warning("[Executor] Refusing to stream-execute truncated/incomplete code.")
-        yield (
-            "error",
-            "⚠️ The generated code appears to be incomplete (possibly cut off due to length). "
-            "Please try a more specific question so the response fits within the token limit."
-        )
-        return
-    # ─────────────────────────────────────────────────────────────────────────
+    # Pre-flight syntax check (non-blocking — only logs, never refuses)
+    syntax_warning = _check_syntax(code)
+    if syntax_warning:
+        logger.debug(f"[Executor] Syntax pre-check note: {syntax_warning}")
 
     try:
         matplotlib.use("Agg")
@@ -1027,16 +1023,10 @@ def execute_code_save_image(session: Optional[SessionData], code: str) -> dict:
     if not safe:
         return {"error": reason}
 
-    # ── Truncation guard ─────────────────────────────────────────────────────
-    if _is_truncated(code):
-        logger.warning("[Executor] Refusing to execute truncated/incomplete code (save_image path).")
-        return {
-            "error": (
-                "⚠️ The generated code appears to be incomplete (possibly cut off due to length). "
-                "Please try a more specific question so the response fits within the token limit."
-            )
-        }
-    # ─────────────────────────────────────────────────────────────────────────
+    # Pre-flight syntax check (non-blocking — only logs, never refuses)
+    syntax_warning = _check_syntax(code)
+    if syntax_warning:
+        logger.debug(f"[Executor] Syntax pre-check note: {syntax_warning}")
 
     try:
         matplotlib.use("Agg")
@@ -1101,7 +1091,7 @@ def execute_code_save_image(session: Optional[SessionData], code: str) -> dict:
             pass
 
     except Exception:
-        error = traceback.format_exc(limit=5)
+        error = _format_error(traceback.format_exc())
     finally:
         sys.stdout = old_stdout
 

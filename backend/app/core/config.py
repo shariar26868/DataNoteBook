@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     AZURE_OPENAI_API_KEY: str = ""
     AZURE_OPENAI_API_VERSION: str = "2024-02-15-preview"
     OPENAI_MODEL: str = "gpt-4.5"
-    MAX_TOKENS: int = 1500
+    MAX_TOKENS: int = 16000  # High limit — allows full responses for any prompt
 
     UPLOAD_DIR: str = "uploads"
     MAX_FILE_SIZE_MB: int = 50

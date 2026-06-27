@@ -1,148 +1,4 @@
-# import re
-# from openai import AsyncOpenAI
-# from app.core.config import settings
-# from app.utils.prompt_builder import build_system_prompt, build_user_message
-# from app.models.session import SessionData
-
-# client = AsyncOpenAI(
-#     base_url=settings.AZURE_OPENAI_ENDPOINT,
-#     api_key=settings.AZURE_OPENAI_API_KEY,
-# )
-
-
-# async def generate_code(session: SessionData, user_message: str) -> dict:
-#     """
-#     Call OpenAI with the dataset context and user question.
-#     Returns one of:
-#       {"explanation": str, "code": str}                            — normal response
-#       {"explanation": "", "code": "", "out_of_scope": True,
-#        "soft_message": str}                                        — off-topic question
-#     """
-#     system_prompt = build_system_prompt(
-#         filename=session.filename,
-#         columns=session.columns,
-#         dtypes=session.dtypes,
-#         row_count=session.row_count,
-#         sample_rows=session.sample_rows,
-#     )
-
-#     # Build messages — include chat history for multi-turn context.
-#     # We store only explanation summaries (NOT raw code) in history so the AI
-#     # does not copy-paste previous code blocks into new responses.
-#     messages = [{"role": "system", "content": system_prompt}]
-#     messages.extend(session.chat_history[-10:])
-#     messages.append({"role": "user", "content": build_user_message(user_message)})
-
-#     response = await client.chat.completions.create(
-#         model=settings.OPENAI_MODEL,
-#         temperature=0.2,
-#         messages=messages,
-#         extra_body={"max_completion_tokens": settings.MAX_TOKENS},
-#     )
-
-#     raw = response.choices[0].message.content or ""
-#     parsed = _parse_response(raw)
-
-#     # Store concise history — skip history entry for out-of-scope so it doesn't
-#     # pollute context with irrelevant exchanges.
-#     session.chat_history.append({"role": "user", "content": user_message})
-#     if parsed.get("out_of_scope"):
-#         session.chat_history.append({
-#             "role": "assistant",
-#             "content": f"[Out of scope] {parsed['soft_message']}"
-#         })
-#     else:
-#         session.chat_history.append({
-#             "role": "assistant",
-#             "content": f"EXPLANATION: {parsed['explanation']}\n(Code was generated and executed separately.)"
-#         })
-
-#     return parsed
-
-
-# def _parse_response(raw: str) -> dict:
-#     # ── Check for out-of-scope response first ──
-#     oos_match = re.match(r"OUT_OF_SCOPE:\s*(.+)", raw.strip(), re.IGNORECASE | re.DOTALL)
-#     if oos_match:
-#         soft_message = oos_match.group(1).strip().split("\n")[0]  # first line only
-#         return {
-#             "explanation": "",
-#             "code": "",
-#             "out_of_scope": True,
-#             "soft_message": soft_message,
-#         }
-
-#     explanation = ""
-#     code = ""
-
-#     exp_match = re.search(r"EXPLANATION:\s*(.*?)(?=CODE:|```|$)", raw, re.DOTALL)
-#     if exp_match:
-#         explanation = exp_match.group(1).strip()
-
-#     code_match = re.search(r"```python\s*([\s\S]*?)```", raw)
-#     if code_match:
-#         code = code_match.group(1).strip()
-#     else:
-#         code_match2 = re.search(r"CODE:\s*([\s\S]+)$", raw)
-#         if code_match2:
-#             code = code_match2.group(1).strip()
-
-#     if not explanation:
-#         explanation = "Here is the generated code for your request."
-
-#     if code:
-#         code = _fix_merged_lines(code)
-
-#     return {"explanation": explanation, "code": code, "out_of_scope": False, "soft_message": None}
-
-
-# def _fix_merged_lines(code: str) -> str:
-#     """
-#     Fix cases where the LLM outputs multiple statements merged onto one line.
-#     E.g.: print("msg")import foo  →  print("msg")\\nimport foo
-
-#     Strategy: use regex to find closing ) followed immediately by a known
-#     statement-starting keyword, then insert a newline between them.
-#     Also adds blank lines before comment blocks.
-#     """
-#     BOUNDARY = re.compile(
-#         r'(\))'
-#         r'(?='                            # lookahead — don't consume
-#         r'import\s|from\s|for\s|if\s|while\s|with\s|def\s|class\s|'
-#         r'return\s|raise\s|print\s*\(|'
-#         r'plt\.|sns\.|pd\.|np\.|df[\.\[_]|'
-#         r'fig[,\s=\(]|ax[,\.\s]|#'
-#         r')'
-#     )
-
-#     # Apply repeatedly until stable (handles chains like )import)plt.)
-#     prev = None
-#     while prev != code:
-#         prev = code
-#         code = BOUNDARY.sub(r'\1\n', code)
-
-#     # Add blank line before # comment lines that directly follow code
-#     lines = code.split('\n')
-#     final = []
-#     for i, line in enumerate(lines):
-#         stripped = line.lstrip()
-#         if stripped.startswith('#') and i > 0:
-#             prev_line = lines[i - 1].strip()
-#             if prev_line and not prev_line.startswith('#'):
-#                 final.append('')
-#         final.append(line)
-
-#     return '\n'.join(final)
-
-
-
-
-
-
-
-
-
-import os
+﻿import os
 import re
 import logging
 from openai import AsyncOpenAI, AsyncAzureOpenAI
@@ -154,37 +10,25 @@ logger = logging.getLogger(__name__)
 
 # Initialize client based on available config
 if settings.AZURE_OPENAI_API_KEY and settings.AZURE_OPENAI_ENDPOINT:
-    # ── Azure OpenAI Configuration ──
-    # Clean the endpoint if it contains '/openai/v1' suffix
     endpoint = settings.AZURE_OPENAI_ENDPOINT
     if "/openai/v1" in endpoint:
         endpoint = endpoint.split("/openai/v1")[0]
-        
-    logger.info(f"[OpenAI] Initializing AsyncAzureOpenAI client with endpoint: {endpoint}")
+    if endpoint.endswith("/openai"):
+        endpoint = endpoint[: -len("/openai")]
+    logger.info(f"[OpenAI] Using Azure endpoint: {endpoint}")
     client = AsyncAzureOpenAI(
         azure_endpoint=endpoint,
         api_key=settings.AZURE_OPENAI_API_KEY,
         api_version=settings.AZURE_OPENAI_API_VERSION,
     )
 else:
-    # ── Standard OpenAI Configuration ──
-    # Fallback to standard OpenAI API (usually gets API key from environment variable OPENAI_API_KEY)
-    logger.info("[OpenAI] Initializing standard AsyncOpenAI client")
-    client = AsyncOpenAI(
-        api_key=os.getenv("OPENAI_API_KEY", ""),
-    )
+    logger.info("[OpenAI] Using standard OpenAI client")
+    client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
 
 async def generate_code(session: SessionData, user_message: str) -> dict:
     """
-    Call OpenAI with the dataset context and user question.
-    Returns one of:
-      {"explanation": str, "code": str}                            — normal response
-      {"explanation": "", "code": "", "out_of_scope": True,
-       "soft_message": str}                                        — off-topic question
-      {"explanation": str, "code": "", "truncated": True}         — response cut off at max_tokens
-    
-    Never raises exceptions — returns parsed response or empty code for errors.
+    Call the LLM and return a structured result. Never raises.
     """
     try:
         system_prompt = build_system_prompt(
@@ -194,189 +38,170 @@ async def generate_code(session: SessionData, user_message: str) -> dict:
             row_count=session.row_count,
             sample_rows=session.sample_rows,
         )
-
-        # Build messages — include chat history for multi-turn context.
-        # We store only explanation summaries (NOT raw code) in history so the AI
-        # does not copy-paste previous code blocks into new responses.
         messages = [{"role": "system", "content": system_prompt}]
-        messages.extend(session.chat_history[-10:])
+        messages.extend(session.chat_history[-20:])
         messages.append({"role": "user", "content": build_user_message(user_message)})
 
+        # No token cap - let the model respond fully
         response = await client.chat.completions.create(
             model=settings.OPENAI_MODEL,
             temperature=0.2,
             messages=messages,
-            extra_body={"max_completion_tokens": settings.MAX_TOKENS},
         )
 
-        # ── Max-tokens guard ──────────────────────────────────────────────────
-        # If the model stopped because it hit the token limit the generated code
-        # may be syntactically incomplete. Executing a truncated script can crash
-        # the executor. We catch this here and refuse to run it.
         finish_reason = response.choices[0].finish_reason
-        if finish_reason == "max_tokens":
-            logger.warning(
-                "[OpenAI] Response truncated (finish_reason=max_tokens). "
-                "Skipping code execution to prevent partial-script crash."
-            )
-            truncated_msg = (
-                "⚠️ The generated response was cut off because it was too long. "
-                "Please try asking a more specific or narrower question so the answer fits within the token limit."
-            )
-            session.chat_history.append({"role": "user", "content": user_message})
-            session.chat_history.append({
-                "role": "assistant",
-                "content": f"[Truncated — not executed] {truncated_msg}"
-            })
-            from app.core.session import save_session
-            save_session(session)
-            return {
-                "explanation": truncated_msg,
-                "code": "",
-                "out_of_scope": False,
-                "soft_message": None,
-                "truncated": True,
-            }
-        # ─────────────────────────────────────────────────────────────────────
+        if finish_reason not in ("stop", "length", None):
+            logger.warning(f"[OpenAI] Unexpected finish_reason={finish_reason!r}")
 
         raw = response.choices[0].message.content or ""
+        if not raw.strip():
+            logger.warning("[OpenAI] Empty response from model")
+            return _error_result("The AI returned an empty response. Please try again.")
+
         parsed = _parse_response(raw)
 
-        # Store concise history — skip history entry for out-of-scope so it doesn't
-        # pollute context with irrelevant exchanges.
         session.chat_history.append({"role": "user", "content": user_message})
         if parsed.get("out_of_scope"):
             session.chat_history.append({
                 "role": "assistant",
-                "content": f"[Out of scope] {parsed['soft_message']}"
+                "content": f"[Out of scope] {parsed.get('soft_message', '')}",
             })
         else:
             session.chat_history.append({
                 "role": "assistant",
-                "content": f"EXPLANATION: {parsed['explanation']}\n(Code was generated and executed separately.)"
+                "content": f"EXPLANATION: {parsed['explanation']}\n(Code was generated and sent to the notebook.)",
             })
 
         from app.core.session import save_session
         save_session(session)
-
         return parsed
 
-    except Exception as e:
-        logger.error(f"[OpenAI] Code generation failed: {str(e)}", exc_info=True)
-        # Return safe default (empty code, no error to user)
-        return {
-            "explanation": "Code generation encountered an issue. Please try again.",
-            "code": "",
-            "out_of_scope": False,
-            "soft_message": None,
-        }
+    except Exception as exc:
+        logger.error(f"[OpenAI] generate_code failed: {exc}", exc_info=True)
+        return _error_result("The AI service is temporarily unavailable. Please try again in a moment.")
 
+
+def _error_result(message: str) -> dict:
+    return {
+        "explanation": message,
+        "code": "",
+        "out_of_scope": False,
+        "soft_message": None,
+        "truncated": False,
+    }
 
 
 def _parse_response(raw: str) -> dict:
     """
-    Parse OpenAI response into structured format.
-    Handles:
-      - OUT_OF_SCOPE responses (off-topic questions)
-      - EXPLANATION + CODE sections
-      - Various code block formats (```python, CODE:, etc)
+    Robust multi-strategy parser for LLM responses.
+    Strategy order:
+      1. OUT_OF_SCOPE prefix
+      2. EXPLANATION: section + python code fence
+      3. Any python code fence without EXPLANATION
+      4. Any generic code fence
+      5. CODE: section fallback
+      6. Entire raw as explanation only
     """
     try:
-        # ── Check for out-of-scope response first ──
-        oos_match = re.match(r"OUT_OF_SCOPE:\s*(.+)", raw.strip(), re.IGNORECASE | re.DOTALL)
-        if oos_match:
-            soft_message = oos_match.group(1).strip().split("\n")[0]  # first line only
+        text = raw.strip()
+
+        # 1. Out-of-scope
+        oos = re.match(r"OUT_OF_SCOPE\s*:\s*(.+)", text, re.IGNORECASE | re.DOTALL)
+        if oos:
+            soft = oos.group(1).strip().split("\n")[0].strip()
             return {
-                "explanation": "",
+                "explanation": soft,
                 "code": "",
                 "out_of_scope": True,
-                "soft_message": soft_message,
+                "soft_message": soft,
+                "truncated": False,
             }
 
         explanation = ""
         code = ""
 
-        # Extract explanation
-        exp_match = re.search(r"EXPLANATION:\s*(.*?)(?=CODE:|```|$)", raw, re.DOTALL)
+        # 2. Extract EXPLANATION section
+        exp_match = re.search(
+            r"EXPLANATION\s*:\s*(.*?)(?=CODE\s*:|```|$)", text, re.DOTALL | re.IGNORECASE
+        )
         if exp_match:
             explanation = exp_match.group(1).strip()
 
-        # Extract code from ```python``` block
-        code_match = re.search(r"```python\s*([\s\S]*?)```", raw)
-        if code_match:
-            code = code_match.group(1).strip()
+        # 3. Python code fence (```python)
+        py_match = re.search(r"```python\s*([\s\S]*?)```", text, re.IGNORECASE)
+        if py_match:
+            code = py_match.group(1).strip()
         else:
-            # Fallback: try CODE: format
-            code_match2 = re.search(r"CODE:\s*([\s\S]+)$", raw)
-            if code_match2:
-                code = code_match2.group(1).strip()
+            # 4. Any code fence
+            any_fence = re.search(r"```(?:\w*\n)?([\s\S]*?)```", text)
+            if any_fence:
+                code = any_fence.group(1).strip()
+            else:
+                # 5. CODE: section
+                code_match = re.search(r"CODE\s*:\s*([\s\S]+)$", text, re.IGNORECASE)
+                if code_match:
+                    code = code_match.group(1).strip()
 
         if not explanation:
-            explanation = "Here is the generated code for your request."
+            explanation = "Here is the generated code for your request." if code else text
 
         if code:
-            code = _fix_merged_lines(code)
+            code = _clean_code(code)
 
         return {
             "explanation": explanation,
             "code": code,
             "out_of_scope": False,
             "soft_message": None,
+            "truncated": False,
         }
 
-    except Exception as e:
-        logger.error(f"[Parse Response] Failed to parse OpenAI response: {str(e)}")
-        # Return safe default
+    except Exception as exc:
+        logger.error(f"[OpenAI] _parse_response failed: {exc}", exc_info=True)
         return {
-            "explanation": "Could not parse response properly.",
+            "explanation": raw[:2000] if raw else "Could not parse the AI response.",
             "code": "",
             "out_of_scope": False,
             "soft_message": None,
+            "truncated": False,
         }
 
 
-def _fix_merged_lines(code: str) -> str:
-    """
-    Fix cases where the LLM outputs multiple statements merged onto one line.
-    E.g.: print("msg")import foo  →  print("msg")\\nimport foo
-
-    Strategy: use regex to find closing ) followed immediately by a known
-    statement-starting keyword, then insert a newline between them.
-    Also adds blank lines before comment blocks.
-    """
+def _clean_code(code: str) -> str:
+    """Post-process AI code: remove stray fences, fix merged lines, add spacing."""
     try:
+        # Remove accidental markdown fences inside the code body
+        code = re.sub(r"^```\w*\s*", "", code, flags=re.MULTILINE)
+        code = re.sub(r"^```\s*$", "", code, flags=re.MULTILINE)
+
+        # Fix merged statements: closing ) immediately followed by a keyword
         BOUNDARY = re.compile(
-            r'(\))'
-            r'(?='                            # lookahead — don't consume
-            r'import\s|from\s|for\s|if\s|while\s|with\s|def\s|class\s|'
-            r'return\s|raise\s|print\s*\(|'
-            r'plt\.|sns\.|pd\.|np\.|df[\.\[_]|'
-            r'fig[,\s=\(]|ax[,\.\s]|#'
-            r')'
+            r"(\))"
+            r"(?="
+            r"import\s|from\s|for\s|if\s|while\s|with\s|def\s|class\s|"
+            r"return\s|raise\s|print\s*\(|"
+            r"plt\.|sns\.|pd\.|np\.|df[\.\[_]|"
+            r"fig[,\s=\(]|ax[,\.\s]|#"
+            r")"
         )
+        prev, iters = None, 0
+        while prev != code and iters < 15:
+            prev, code = code, BOUNDARY.sub(r"\1\n", code)
+            iters += 1
 
-        # Apply repeatedly until stable (handles chains like )import)plt.)
-        prev = None
-        iterations = 0
-        while prev != code and iterations < 10:  # Prevent infinite loops
-            prev = code
-            code = BOUNDARY.sub(r'\1\n', code)
-            iterations += 1
-
-        # Add blank line before # comment lines that directly follow code
-        lines = code.split('\n')
-        final = []
+        # Add blank line before comment lines that directly follow code
+        lines = code.split("\n")
+        result = []
         for i, line in enumerate(lines):
             stripped = line.lstrip()
-            if stripped.startswith('#') and i > 0:
+            if stripped.startswith("#") and i > 0:
                 prev_line = lines[i - 1].strip()
-                if prev_line and not prev_line.startswith('#'):
-                    final.append('')
-            final.append(line)
+                if prev_line and not prev_line.startswith("#"):
+                    result.append("")
+            result.append(line)
 
-        return '\n'.join(final)
+        return "\n".join(result).strip()
 
-    except Exception as e:
-        logger.warning(f"[Fix Merged Lines] Could not fix merged lines: {str(e)}")
-        # Return original code if fixing fails
+    except Exception as exc:
+        logger.warning(f"[OpenAI] _clean_code failed: {exc}")
         return code
