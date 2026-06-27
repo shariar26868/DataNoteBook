@@ -113,7 +113,7 @@
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, UploadFile, File, Response, Request, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, Response, Request, HTTPException, Query, Header
 from pydantic import BaseModel
 from app.services.dataset_service import handle_upload, load_dataframe
 from app.core.session import get_session
@@ -296,7 +296,7 @@ async def preview_dataset(
 
 
 @router.post("/upload/download")
-async def download_cleaned_dataset(request: Request):
+async def download_cleaned_dataset(request: Request, authorization: str | None = Header(None)):
     """
     Download the current (possibly cleaned/modified) dataset from session.
     Saves the cleaned version back to Azure Vault in the same project/folder,
@@ -337,19 +337,25 @@ async def download_cleaned_dataset(request: Request):
         file_bytes = file_buf.getvalue()
 
         # 3. Upload the cleaned file to Azure Vault under the same project and folder
-        from app.services.vault_service import get_vault_client
-        vault = get_vault_client()
+        from app.api.routes.vault import _get_authed_vault
+        vault = _get_authed_vault(authorization)
         try:
-            await vault.upload_file_complete(
+            file_data = await vault.upload_file_complete(
                 filename=cleaned_filename,
                 file_bytes=file_bytes,
                 project_id=session.vault_project_id,
                 folder_id=session.vault_folder_id,
                 content_type=content_type,
             )
-            logger.info(f"[Download] Successfully uploaded cleaned file '{cleaned_filename}' to Azure Vault (project={session.vault_project_id}, folder={session.vault_folder_id})")
+            # Confirm file upload status as completed
+            file_id = file_data.get("id")
+            if file_id:
+                await vault.update_upload_status(file_id, {"upload_status": "completed"})
+                logger.info(f"[Download] Successfully uploaded cleaned file '{cleaned_filename}' and confirmed upload status to Azure Vault (id={file_id}, project={session.vault_project_id}, folder={session.vault_folder_id})")
+            else:
+                logger.warning(f"[Download] Uploaded cleaned file '{cleaned_filename}' but no ID returned to confirm status.")
         except Exception as e:
-            logger.error(f"[Download] Failed uploading cleaned file to Azure Vault: {str(e)}")
+            logger.error(f"[Download] Failed uploading/confirming cleaned file to Azure Vault: {str(e)}")
 
         # 4. Return as attachment for local download
         return Response(
