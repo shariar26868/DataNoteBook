@@ -293,3 +293,76 @@ async def preview_dataset(
     except Exception as e:
         logger.error(f"[Preview] Unexpected error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Preview failed: {str(e)}")
+
+
+@router.post("/upload/download")
+async def download_cleaned_dataset(request: Request):
+    """
+    Download the current (possibly cleaned/modified) dataset from session.
+    Saves the cleaned version back to Azure Vault in the same project/folder,
+    and returns the file bytes to trigger a local browser download.
+    """
+    try:
+        session_id = request.cookies.get("session_id")
+        if not session_id:
+            raise HTTPException(status_code=401, detail="No active session. Please upload a dataset first.")
+
+        session = get_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found. Please re-upload your dataset.")
+
+        # 1. Load the current dataframe from kernel/cache
+        df = load_dataframe(session)
+
+        # 2. Get file extension and set proper MIME types & conversion
+        filename = session.filename or "dataset.csv"
+        import os
+        base, ext = os.path.splitext(filename)
+        ext = ext.lower()
+
+        # We'll name it cleaned_<original_name>
+        cleaned_filename = f"cleaned_{base}{ext}"
+
+        import io
+        file_buf = io.BytesIO()
+        if ext in (".xlsx", ".xls"):
+            # Excel format
+            df.to_excel(file_buf, index=False)
+            content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        else:
+            # Fallback to CSV
+            df.to_csv(file_buf, index=False)
+            content_type = "text/csv"
+
+        file_bytes = file_buf.getvalue()
+
+        # 3. Upload the cleaned file to Azure Vault under the same project and folder
+        from app.services.vault_service import get_vault_client
+        vault = get_vault_client()
+        try:
+            await vault.upload_file_complete(
+                filename=cleaned_filename,
+                file_bytes=file_bytes,
+                project_id=session.vault_project_id,
+                folder_id=session.vault_folder_id,
+                content_type=content_type,
+            )
+            logger.info(f"[Download] Successfully uploaded cleaned file '{cleaned_filename}' to Azure Vault (project={session.vault_project_id}, folder={session.vault_folder_id})")
+        except Exception as e:
+            logger.error(f"[Download] Failed uploading cleaned file to Azure Vault: {str(e)}")
+
+        # 4. Return as attachment for local download
+        return Response(
+            content=file_bytes,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{cleaned_filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Download] Cleaned download failed: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to download dataset: {str(e)}")
