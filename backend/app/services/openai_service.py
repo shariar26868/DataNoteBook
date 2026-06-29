@@ -1,4 +1,4 @@
-﻿import os
+import os
 import re
 import logging
 from openai import AsyncOpenAI, AsyncAzureOpenAI
@@ -26,7 +26,7 @@ else:
     client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY", ""))
 
 
-async def generate_code(session: SessionData, user_message: str) -> dict:
+async def generate_code(session: SessionData, user_message: str, image: str = None) -> dict:
     """
     Call the LLM and return a structured result. Never raises.
     """
@@ -40,7 +40,25 @@ async def generate_code(session: SessionData, user_message: str) -> dict:
         )
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(session.chat_history[-20:])
-        messages.append({"role": "user", "content": build_user_message(user_message)})
+        
+        if image:
+            # Map standard OpenAI image block format
+            img_url = image if image.startswith("data:image") else f"data:image/png;base64,{image}"
+            user_content = [
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": img_url
+                    }
+                },
+                {
+                    "type": "text",
+                    "text": build_user_message(user_message)
+                }
+            ]
+            messages.append({"role": "user", "content": user_content})
+        else:
+            messages.append({"role": "user", "content": build_user_message(user_message)})
 
         # No token cap - let the model respond fully
         response = await client.chat.completions.create(

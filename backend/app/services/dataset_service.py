@@ -343,6 +343,13 @@ async def handle_upload(file: UploadFile) -> SessionData:
             folder_id=folder_id,
             content_type=content_type,
         )
+        file_id = file_data.get("id")
+        if file_id:
+            try:
+                await vault.update_upload_status(file_id, {"upload_status": "completed"})
+                logger.info(f"[Upload] Confirmed upload completion for file {file_id}")
+            except Exception as se:
+                logger.warning(f"[Upload] Failed to confirm upload completion for file {file_id}: {se}")
     except Exception as e:
         logger.error(f"[Upload] Failed uploading to Azure: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed uploading to Azure: {str(e)}")

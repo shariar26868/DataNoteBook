@@ -579,7 +579,6 @@ BLOCKED = [
     "import subprocess",
     "__import__(",
     "compile(",
-    "globals(",
     "__builtins__",
     "os.system",
     "os.popen",
@@ -724,6 +723,193 @@ def _build_namespace(session: Optional[SessionData], code: str) -> dict:
     else:
         ns = {"pd": pd, "np": np}
         logger.info("[Executor] No session provided, running in clean namespace")
+
+    # ── Inject File Management & Cleaning Helpers ──
+    def clean_dataset_wrapper(data_df):
+        from app.utils.data_cleaner import clean_dataset as run_clean
+        return run_clean(data_df)
+
+    def save_to_vault_wrapper(data, filename):
+        import asyncio
+        import io
+        from app.services.vault_service import get_vault_client
+        
+        if session is None:
+            print("Error: No active session. Cannot save to Vault.")
+            return False
+
+        if isinstance(data, pd.DataFrame):
+            buf = io.BytesIO()
+            if filename.endswith(('.xlsx', '.xls')):
+                data.to_excel(buf, index=False)
+                content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            else:
+                data.to_csv(buf, index=False)
+                content_type = "text/csv"
+            file_bytes = buf.getvalue()
+        elif isinstance(data, bytes):
+            file_bytes = data
+            content_type = "application/octet-stream"
+        else:
+            print("Error: data must be a pandas DataFrame or raw bytes.")
+            return False
+
+        async def _upload():
+            vault = get_vault_client()
+            project_id = session.vault_project_id
+            folder_id = session.vault_folder_id
+            if not project_id or not folder_id:
+                project_id, folder_id = await vault.setup_global_notebooks_storage()
+            
+            file_data = await vault.upload_file_complete(
+                filename=filename,
+                file_bytes=file_bytes,
+                project_id=project_id,
+                folder_id=folder_id,
+                content_type=content_type
+            )
+            file_id = file_data.get("id")
+            if file_id:
+                await vault.update_upload_status(file_id, {"upload_status": "completed"})
+                print(f"File '{filename}' successfully saved/uploaded to Vault (ID: {file_id})")
+                return True
+            else:
+                print(f"File '{filename}' registered in Vault but could not confirm completion status.")
+                return False
+
+        # Run async synchronously
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _upload())
+                    return future.result(timeout=30)
+            else:
+                return loop.run_until_complete(_upload())
+        except Exception as e:
+            try:
+                return asyncio.run(_upload())
+            except Exception as e2:
+                print(f"Error saving to Vault: {e2}")
+                return False
+
+    def rename_in_vault_wrapper(old_name, new_name):
+        import asyncio
+        from app.services.vault_service import get_vault_client
+        if session is None:
+            print("Error: No active session.")
+            return False
+
+        async def _rename():
+            vault = get_vault_client()
+            resources = await vault.list_resources(parent_id=session.vault_folder_id, project_id=session.vault_project_id)
+            file_id = None
+            for r in resources:
+                if r.get("type") == "file" and r.get("name") == old_name:
+                    file_id = r.get("id")
+                    break
+            
+            if not file_id:
+                print(f"Error: File '{old_name}' not found in current folder.")
+                return False
+                
+            await vault.rename_resource(file_id, new_name)
+            print(f"Successfully renamed file '{old_name}' to '{new_name}'")
+            return True
+
+        # Run async synchronously
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _rename())
+                    return future.result(timeout=30)
+            else:
+                return loop.run_until_complete(_rename())
+        except Exception as e:
+            try:
+                return asyncio.run(_rename())
+            except Exception as e2:
+                print(f"Error renaming file: {e2}")
+                return False
+
+    def delete_from_vault_wrapper(filename):
+        import asyncio
+        from app.services.vault_service import get_vault_client
+        if session is None:
+            print("Error: No active session.")
+            return False
+
+        async def _delete():
+            vault = get_vault_client()
+            resources = await vault.list_resources(parent_id=session.vault_folder_id, project_id=session.vault_project_id)
+            file_id = None
+            for r in resources:
+                if r.get("type") == "file" and r.get("name") == filename:
+                    file_id = r.get("id")
+                    break
+            
+            if not file_id:
+                print(f"Error: File '{filename}' not found in current folder.")
+                return False
+
+            url = f"{vault._base_url}/vault_resources/{file_id}"
+            await vault._request("DELETE", url)
+            print(f"Successfully deleted file '{filename}' from Vault.")
+            return True
+
+        # Run async synchronously
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _delete())
+                    return future.result(timeout=30)
+            else:
+                return loop.run_until_complete(_delete())
+        except Exception as e:
+            try:
+                return asyncio.run(_delete())
+            except Exception as e2:
+                print(f"Error deleting file: {e2}")
+                return False
+
+    def list_vault_files_wrapper():
+        import asyncio
+        from app.services.vault_service import get_vault_client
+        if session is None:
+            return []
+
+        async def _list():
+            vault = get_vault_client()
+            resources = await vault.list_resources(parent_id=session.vault_folder_id, project_id=session.vault_project_id)
+            files = [r.get("name") for r in resources if r.get("type") == "file"]
+            return files
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _list())
+                    return future.result(timeout=30)
+            else:
+                return loop.run_until_complete(_list())
+        except Exception as e:
+            try:
+                return asyncio.run(_list())
+            except Exception as e2:
+                print(f"Error listing files: {e2}")
+                return []
+
+    ns.setdefault("clean_dataset", clean_dataset_wrapper)
+    ns.setdefault("save_to_vault", save_to_vault_wrapper)
+    ns.setdefault("rename_in_vault", rename_in_vault_wrapper)
+    ns.setdefault("delete_from_vault", delete_from_vault_wrapper)
+    ns.setdefault("list_vault_files", list_vault_files_wrapper)
 
     if session is not None:
         logger.info(f"[Executor] Session {session.session_id}: filename='{session.filename}', "

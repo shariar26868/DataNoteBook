@@ -20,7 +20,7 @@ async def chat(request: ChatRequest, session_id: Optional[str] = Cookie(None)):
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found or expired. Please re-upload your file.")
 
-    result = await generate_code(session, request.message)
+    result = await generate_code(session, request.message, request.image)
 
     return ChatResponse(
         explanation=result["explanation"],

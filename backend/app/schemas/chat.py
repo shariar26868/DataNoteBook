@@ -11,6 +11,7 @@ class DatasetInfo(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+    image: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
