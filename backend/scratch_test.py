@@ -9,7 +9,7 @@ load_dotenv("backend/.env")
 VAULT_API_BASE_URL = os.getenv("VAULT_API_BASE_URL")
 VAULT_EMAIL = os.getenv("VAULT_EMAIL")
 VAULT_PASSWORD = os.getenv("VAULT_PASSWORD")
-RESOURCE_ID = "6a411617f3d9416dab1866a4"
+RESOURCE_ID = "6a424076f3d9416dab1866a4"
 
 async def main():
     print(f"Connecting to: {VAULT_API_BASE_URL}")

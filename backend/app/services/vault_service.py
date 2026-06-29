@@ -1066,7 +1066,20 @@ class VaultClient:
         logger.info(f"[Vault] Getting download URL for resource_id={resource_id}")
         
         try:
-            result = await self._request("GET", url)
+            try:
+                result = await self._request("GET", url)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 400:
+                    logger.warning(f"[Vault] Download returned 400 for {resource_id}. Attempting to set upload_status to completed and retry...")
+                    try:
+                        await self.update_upload_status(resource_id, {"upload_status": "completed"})
+                        result = await self._request("GET", url)
+                    except Exception as nested_err:
+                        logger.error(f"[Vault] Failed auto-completing upload status: {nested_err}")
+                        raise e
+                else:
+                    raise e
+
             data = result.get("data", result)
             
             # Try various possible field names
