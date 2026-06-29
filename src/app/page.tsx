@@ -33,6 +33,7 @@ interface Message {
   text: string;
   code?: string | null;
   truncated?: boolean;
+  image?: string | null;
 }
 
 interface Cell {
@@ -704,17 +705,17 @@ function WorkspaceContent() {
   };
 
   // ── Chat with Gemini (real API) ───────────────────────────────────────────
-  const sendChat = async (text: string) => {
-    if (!text.trim()) return;
+  const sendChat = async (text: string, image: string | null = null) => {
+    if (!text.trim() && !image) return;
     if (!session.active) {
       triggerBanner("Please upload a dataset first", "err");
       return;
     }
     setChatLoading(true);
     setPendingCode(null);
-    setMessages((prev) => [...prev, { role: "user", text }]);
+    setMessages((prev) => [...prev, { role: "user", text, image }]);
     try {
-      const res = await sendChatAction(text);
+      const res = await sendChatAction(text, image);
       if (res.status === 401 || res.status === 404) {
         triggerBanner("Session expired — please re-upload your dataset", "err");
         setSession({ active: false, filename: "", dfName: "", columns: [], dtypes: {}, rowCount: 0 });
@@ -1263,6 +1264,7 @@ function WorkspaceContent() {
             addCodeCell={addCodeCell}
             onClose={() => setRightSidebarOpen(false)}
             handleUpload={handleUpload}
+            handleSelectDataset={handleSelectDataset}
             sessionActive={session.active}
             sessionFilename={session.filename}
             onUnloadDataset={handleUnloadDataset}

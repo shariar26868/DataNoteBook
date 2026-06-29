@@ -200,9 +200,14 @@ export default function TableOfContents({
                         folderFiles.map((file) => (
                           <div
                             key={file.id}
+                            draggable={true}
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData("application/json", JSON.stringify({ id: file.id, name: file.name, type: "file" }));
+                              e.dataTransfer.effectAllowed = "copyMove";
+                            }}
                             onDoubleClick={() => onFileDoubleClick(file.name, file.id)}
                             className="flex items-center gap-1.5 px-2.5 py-0.5 cursor-pointer text-slate-300 hover:text-white hover:bg-slate-800/50 rounded-sm transition-colors text-[11.5px] select-none"
-                            title="Double click to preview dataset"
+                            title="Double click to preview dataset, drag to chat to analyze"
                           >
                             <FileSpreadsheet className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500/70" />
                             <span className="truncate">{file.name}</span>
@@ -214,14 +219,19 @@ export default function TableOfContents({
                 </div>
               );
             })}
-
+ 
             {/* ── Render Root Files (Files not in any folder) ── */}
             {rootFiles.map((file) => (
               <div
                 key={file.id}
+                draggable={true}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("application/json", JSON.stringify({ id: file.id, name: file.name, type: "file" }));
+                  e.dataTransfer.effectAllowed = "copyMove";
+                }}
                 onDoubleClick={() => onFileDoubleClick(file.name, file.id)}
                 className="flex items-center gap-1.5 px-6 py-1 cursor-pointer text-slate-300 hover:text-white hover:bg-slate-800/40 rounded transition-colors text-[12px] select-none"
-                title="Double click to preview dataset"
+                title="Double click to preview dataset, drag to chat to analyze"
               >
                 <FileSpreadsheet className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500/70" />
                 <span className="truncate">{file.name}</span>

@@ -4,7 +4,7 @@ import * as React from "react";
 import {
   Plus, X, ArrowUp, Sparkles, MoreVertical, ThumbsUp, ThumbsDown,
   ChevronLeft, ChevronRight, Table, Loader2, AlertCircle, RefreshCw,
-  Download
+  Download, Image as ImageIcon
 } from "lucide-react";
 
 interface Message {
@@ -12,6 +12,7 @@ interface Message {
   text: string;
   code?: string | null;
   truncated?: boolean;
+  image?: string | null;
 }
 
 interface GeminiAssistantProps {
@@ -19,12 +20,13 @@ interface GeminiAssistantProps {
   chatInput: string;
   setChatInput: (val: string) => void;
   chatLoading: boolean;
-  sendChat: (text: string) => void;
+  sendChat: (text: string, image?: string | null) => void;
   pendingCode: string | null;
   setPendingCode: (val: string | null) => void;
   addCodeCell: (code: string, runImmediately: boolean) => void;
   onClose: () => void;
   handleUpload: (file: File, fromSidebar: boolean) => void;
+  handleSelectDataset?: (filename: string, fileId: string) => void;
   sessionActive: boolean;
   sessionFilename?: string;
   onUnloadDataset?: () => void;
@@ -68,13 +70,70 @@ function TruncatedWarning() {
 export default function GeminiAssistant({
   messages, chatInput, setChatInput, chatLoading, sendChat,
   pendingCode, setPendingCode, addCodeCell,
-  onClose, handleUpload, sessionActive, sessionFilename, onUnloadDataset, triggerBanner,
+  onClose, handleUpload, handleSelectDataset, sessionActive, sessionFilename, onUnloadDataset, triggerBanner,
   activeTab, setActiveTab,
   showGeminiTab, showPreviewTab, onCloseGeminiTab, onClosePreviewTab,
 }: GeminiAssistantProps) {
   const bottomRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const taRef = React.useRef<HTMLTextAreaElement>(null);
+
+  const [attachedImage, setAttachedImage] = React.useState<string | null>(null);
+  const [isDragging, setIsDragging] = React.useState(false);
+  const imageInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+
+    // 1. Check for files dragged from the sidebar (TOC JSON format)
+    const rawData = e.dataTransfer.getData("application/json");
+    if (rawData) {
+      try {
+        const data = JSON.parse(rawData);
+        if (data.type === "file" && data.id && data.name) {
+          handleSelectDataset?.(data.name, data.id);
+          triggerBanner(`Switching to dataset: ${data.name}…`, "ok");
+          return;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Check for local files dropped
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      const isImg = file.type.startsWith("image/");
+      
+      if (isImg) {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          if (evt.target?.result) {
+            setAttachedImage(evt.target.result as string);
+            triggerBanner("Attached image for analysis", "ok");
+          }
+        };
+        reader.readAsDataURL(file);
+      } else {
+        // Dataset file
+        const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+        if (['.csv', '.xlsx', '.xls'].includes(ext)) {
+          triggerBanner(`Uploading and analyzing local dataset: ${file.name}…`);
+          handleUpload(file, true);
+        } else {
+          triggerBanner("Unsupported file type. Please drop images or .csv/.xlsx datasets.", "err");
+        }
+      }
+    }
+  };
 
   // Preview data state
   const [previewData, setPreviewData] = React.useState<{
@@ -139,9 +198,10 @@ export default function GeminiAssistant({
   }, [messages, chatLoading]);
 
   const handleSend = () => {
-    if (!chatInput.trim()) return;
-    sendChat(chatInput);
+    if (!chatInput.trim() && !attachedImage) return;
+    sendChat(chatInput, attachedImage);
     setChatInput("");
+    setAttachedImage(null);
     if (taRef.current) taRef.current.style.height = "auto";
   };
 
@@ -200,9 +260,24 @@ export default function GeminiAssistant({
   }, [activeTab, sessionActive, previewPage, loadPreview]);
 
   return (
-    <aside className={`bg-[#0A1628] border-l border-slate-900/80 flex flex-col overflow-hidden flex-shrink-0 z-30 transition-all duration-300 ${
-      activeTab === "preview" ? "w-[550px]" : "w-[300px]"
-    }`}>
+    <aside 
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className={`relative bg-[#0A1628] border-l border-slate-900/80 flex flex-col overflow-hidden flex-shrink-0 z-30 transition-all duration-300 ${
+        activeTab === "preview" ? "w-[550px]" : "w-[300px]"
+      }`}
+    >
+      {isDragging && (
+        <div className="absolute inset-0 bg-[#0A1628]/90 border-2 border-dashed border-emerald-500/40 flex flex-col items-center justify-center gap-3 z-50 pointer-events-none">
+          <div className="h-12 w-12 rounded-full bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
+            <ArrowUp className="h-6 w-6 animate-bounce" />
+          </div>
+          <p className="text-xs font-medium text-slate-300">
+            Drop file or image here to analyze
+          </p>
+        </div>
+      )}
       {/* ── Header ── */}
       <div className="h-11 border-b border-slate-900/80 flex items-center justify-between px-3 flex-shrink-0">
         <div className="flex items-center gap-2">
@@ -315,8 +390,15 @@ export default function GeminiAssistant({
                 ) : (
                   <div className="flex-1 flex justify-end gap-2 items-start">
                     {/* User bubble */}
-                    <div className="bg-[#112240] border border-slate-800/60 rounded-xl rounded-tr-sm p-3 text-[12px] text-slate-200 leading-relaxed max-w-[85%]">
-                      {msg.text}
+                    <div className="bg-[#112240] border border-slate-800/60 rounded-xl rounded-tr-sm p-3 text-[12px] text-slate-200 leading-relaxed max-w-[85%] flex flex-col gap-2">
+                      {msg.image && (
+                        <img 
+                          src={msg.image} 
+                          alt="Attached snippet" 
+                          className="max-w-full max-h-40 rounded border border-slate-700/50 object-contain bg-slate-950/20" 
+                        />
+                      )}
+                      {msg.text && <div>{msg.text}</div>}
                     </div>
                     {/* User avatar */}
                     <div className="h-6 w-6 rounded-full bg-pink-600 flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0 mt-0.5 border border-pink-700/40">
@@ -377,6 +459,25 @@ export default function GeminiAssistant({
               className="hidden"
               onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0], true)}
             />
+            <input
+              type="file"
+              ref={imageInputRef}
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = (evt) => {
+                    if (evt.target?.result) {
+                      setAttachedImage(evt.target.result as string);
+                    }
+                  };
+                  reader.readAsDataURL(file);
+                  e.target.value = "";
+                }
+              }}
+            />
             <div className="bg-[#00081a] border border-slate-800 rounded-2xl px-3 pt-3 pb-2.5 flex flex-col gap-2 focus-within:border-cyan-500/30 focus-within:shadow-[0_0_0_3px_rgba(6,182,212,0.04)] transition-all">
               {sessionActive && sessionFilename && (
                 <div className="flex items-center gap-1 px-1.5 py-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded text-emerald-400 text-[10.5px] w-fit select-none">
@@ -390,6 +491,18 @@ export default function GeminiAssistant({
                       <X className="h-2.5 w-2.5" />
                     </button>
                   )}
+                </div>
+              )}
+              {attachedImage && (
+                <div className="relative w-16 h-16 rounded border border-slate-800 bg-slate-950/40 p-0.5 select-none mt-1 group">
+                  <img src={attachedImage} alt="preview" className="w-full h-full object-cover rounded" />
+                  <button
+                    onClick={() => setAttachedImage(null)}
+                    className="absolute -top-1.5 -right-1.5 bg-red-600 hover:bg-red-500 text-white rounded-full p-0.5 shadow-sm transition-colors cursor-pointer"
+                    title="Remove image"
+                  >
+                    <X className="h-2.5 w-2.5" />
+                  </button>
                 </div>
               )}
               <textarea
@@ -420,6 +533,13 @@ export default function GeminiAssistant({
                   >
                     <Plus className="h-3.5 w-3.5" />
                   </button>
+                  <button
+                    onClick={() => imageInputRef.current?.click()}
+                    className="p-1 text-slate-600 hover:text-slate-300 hover:bg-slate-800/60 rounded-md transition-all"
+                    title="Attach image"
+                  >
+                    <ImageIcon className="h-3.5 w-3.5" />
+                  </button>
                   {sessionActive && (
                     <button
                       onClick={handleDownloadCleaned}
@@ -436,10 +556,10 @@ export default function GeminiAssistant({
                   )}
                 </div>
                 <button
-                  disabled={chatLoading || !chatInput.trim()}
+                  disabled={chatLoading || (!chatInput.trim() && !attachedImage)}
                   onClick={handleSend}
                   className={`h-7 w-7 rounded-full flex items-center justify-center transition-all ${
-                    chatInput.trim() && !chatLoading
+                    (chatInput.trim() || attachedImage) && !chatLoading
                       ? "bg-emerald-500 hover:bg-emerald-400 text-slate-950 cursor-pointer shadow-[0_0_10px_rgba(16,185,129,0.25)]"
                       : "bg-slate-800 text-slate-600 cursor-not-allowed opacity-40"
                   }`}

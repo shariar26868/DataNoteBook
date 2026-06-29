@@ -48,8 +48,8 @@ export const uploadFileToPresignedUrlWithProgress = async (
   try {
     const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks for large files
     
-    // For small files (< 100MB), use simple upload with progress
-    if (file.size < 100 * 1024 * 1024) {
+    // For files < 500MB, use simple upload with progress
+    if (file.size < 500 * 1024 * 1024) {
       return await uploadSmallFileWithProgress(presignedUrl, file, onProgress);
     }
     

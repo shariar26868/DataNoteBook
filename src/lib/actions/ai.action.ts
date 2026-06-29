@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 
-export async function sendChatAction(text: string) {
+export async function sendChatAction(text: string, image: string | null = null) {
     try {
         const cookieStore = await cookies();
         const cookieHeader = cookieStore.toString();
@@ -13,7 +13,7 @@ export async function sendChatAction(text: string) {
                 "Content-Type": "application/json",
                 ...(cookieHeader ? { Cookie: cookieHeader } : {}),
             },
-            body: JSON.stringify({ message: text }),
+            body: JSON.stringify({ message: text, image: image }),
         });
 
         const status = res.status;
