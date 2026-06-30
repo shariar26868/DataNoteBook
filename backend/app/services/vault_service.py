@@ -794,7 +794,22 @@ class VaultClient:
     def __init__(self):
         self._token: Optional[str] = None
         self._base_url = settings.VAULT_API_BASE_URL.rstrip("/")
-        self._client = httpx.AsyncClient(timeout=60.0, follow_redirects=True)
+        self._loop_val = None
+        self._client_val = None
+
+    @property
+    def _client(self) -> httpx.AsyncClient:
+        try:
+            import asyncio
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+            
+        if not hasattr(self, "_loop_val") or self._loop_val != loop or getattr(self, "_client_val", None) is None:
+            self._loop_val = loop
+            self._client_val = httpx.AsyncClient(timeout=60.0, follow_redirects=True)
+            logger.info(f"[Vault] Created new httpx.AsyncClient for event loop: {loop}")
+        return self._client_val
 
     @property
     def _headers(self) -> dict:
@@ -1255,7 +1270,8 @@ class VaultClient:
 
     async def close(self):
         """Close the HTTP client."""
-        await self._client.aclose()
+        if getattr(self, "_client_val", None) is not None:
+            await self._client_val.aclose()
 
 
 # ── Module-level singleton ──
