@@ -566,10 +566,12 @@ async def save_and_upload_modified_dataset(session: SessionData, df: pd.DataFram
     Convert the modified DataFrame to bytes, upload to Azure Vault,
     update the session metadata (columns, dtypes, row_count, sample_rows, vault_file_id, blob_name),
     and save the updated session to disk.
+    
+    Preserves the original uploaded file untouched, creating/updating a 'cleaned_' prefixed version instead.
     """
     logger.info(f"[Dataset Update] Uploading modified dataset for session {session.session_id}")
     
-    # 1. Get format and content type based on the original filename
+    # 1. Get format and content type based on the active filename
     filename = session.filename or "dataset.csv"
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXT:
@@ -577,6 +579,19 @@ async def save_and_upload_modified_dataset(session: SessionData, df: pd.DataFram
         
     content_type = MIME_TYPES.get(ext, "application/octet-stream")
     
+    # Determine the target filename and whether we should delete the active file
+    base = Path(filename).stem
+    if not base.startswith("cleaned_"):
+        # Original file is active. Keep it untouched, create a new 'cleaned_' file
+        cleaned_filename = f"cleaned_{base}{ext}"
+        should_delete_old = False
+        logger.info(f"[Dataset Update] Preserving original dataset '{filename}' and creating new modified version '{cleaned_filename}'")
+    else:
+        # A cleaned version is already active. Overwrite it to prevent file cluttering
+        cleaned_filename = f"{base}{ext}"
+        should_delete_old = True
+        logger.info(f"[Dataset Update] Overwriting active modified dataset '{filename}'")
+
     # 2. Convert DataFrame to bytes
     buf = io.BytesIO()
     if ext in (".xlsx", ".xls"):
@@ -588,10 +603,10 @@ async def save_and_upload_modified_dataset(session: SessionData, df: pd.DataFram
     # 3. Upload to Azure Vault
     vault = get_vault_client()
     
-    # If there was an old file, delete it first to replace it
-    if session.vault_file_id:
+    # If we are overwriting a previously cleaned version, delete the old resource first
+    if should_delete_old and session.vault_file_id:
         try:
-            logger.info(f"[Dataset Update] Deleting old file resource {session.vault_file_id}")
+            logger.info(f"[Dataset Update] Deleting old modified file resource {session.vault_file_id}")
             await vault.delete_resource(session.vault_file_id)
         except Exception as e:
             logger.warning(f"[Dataset Update] Failed to delete old resource {session.vault_file_id}: {e}")
@@ -599,7 +614,7 @@ async def save_and_upload_modified_dataset(session: SessionData, df: pd.DataFram
     # Upload the updated file bytes
     try:
         file_data = await vault.upload_file_complete(
-            filename=filename,
+            filename=cleaned_filename,
             file_bytes=file_bytes,
             project_id=session.vault_project_id,
             folder_id=session.vault_folder_id,
@@ -622,6 +637,7 @@ async def save_and_upload_modified_dataset(session: SessionData, df: pd.DataFram
         raise RuntimeError(f"Failed uploading modified dataset to Vault: {str(e)}")
         
     # 4. Update session metadata
+    session.filename = cleaned_filename
     session.vault_file_id = file_data.get("id", session.vault_file_id)
     session.blob_name = file_data.get("blob_name", session.blob_name)
     session.columns = [str(c) for c in df.columns.tolist()]

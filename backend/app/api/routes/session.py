@@ -22,4 +22,7 @@ async def get_session_status(session_id: Optional[str] = Cookie(None)):
         columns=session.columns,
         dtypes=session.dtypes,
         row_count=session.row_count,
+        vault_file_id=session.vault_file_id,
+        vault_project_id=session.vault_project_id,
+        vault_folder_id=session.vault_folder_id,
     )
