@@ -559,3 +559,88 @@ def load_dataframe(session: SessionData) -> pd.DataFrame:
         raise RuntimeError(
             f"Dataset for '{session.filename}' is not cached and re-download from Azure failed: {str(e)}"
         )
+
+
+async def save_and_upload_modified_dataset(session: SessionData, df: pd.DataFrame) -> None:
+    """
+    Convert the modified DataFrame to bytes, upload to Azure Vault,
+    update the session metadata (columns, dtypes, row_count, sample_rows, vault_file_id, blob_name),
+    and save the updated session to disk.
+    """
+    logger.info(f"[Dataset Update] Uploading modified dataset for session {session.session_id}")
+    
+    # 1. Get format and content type based on the original filename
+    filename = session.filename or "dataset.csv"
+    ext = Path(filename).suffix.lower()
+    if ext not in ALLOWED_EXT:
+        ext = ".csv"  # default fallback
+        
+    content_type = MIME_TYPES.get(ext, "application/octet-stream")
+    
+    # 2. Convert DataFrame to bytes
+    buf = io.BytesIO()
+    if ext in (".xlsx", ".xls"):
+        df.to_excel(buf, index=False)
+    else:
+        df.to_csv(buf, index=False)
+    file_bytes = buf.getvalue()
+    
+    # 3. Upload to Azure Vault
+    vault = get_vault_client()
+    
+    # If there was an old file, delete it first to replace it
+    if session.vault_file_id:
+        try:
+            logger.info(f"[Dataset Update] Deleting old file resource {session.vault_file_id}")
+            await vault.delete_resource(session.vault_file_id)
+        except Exception as e:
+            logger.warning(f"[Dataset Update] Failed to delete old resource {session.vault_file_id}: {e}")
+            
+    # Upload the updated file bytes
+    try:
+        file_data = await vault.upload_file_complete(
+            filename=filename,
+            file_bytes=file_bytes,
+            project_id=session.vault_project_id,
+            folder_id=session.vault_folder_id,
+            content_type=content_type,
+        )
+        
+        # Confirm upload status
+        file_id = file_data.get("id")
+        if file_id:
+            try:
+                await vault.update_upload_status(file_id, {"upload_status": "completed"})
+                logger.info(f"[Dataset Update] Confirmed upload completion for updated file {file_id}")
+            except Exception as se:
+                logger.warning(f"[Dataset Update] Failed to confirm upload completion for file {file_id}: {se}")
+        else:
+            logger.warning("[Dataset Update] Upload completed but no ID returned from Vault.")
+            
+    except Exception as e:
+        logger.error(f"[Dataset Update] Failed uploading modified dataset to Vault: {str(e)}")
+        raise RuntimeError(f"Failed uploading modified dataset to Vault: {str(e)}")
+        
+    # 4. Update session metadata
+    session.vault_file_id = file_data.get("id", session.vault_file_id)
+    session.blob_name = file_data.get("blob_name", session.blob_name)
+    session.columns = [str(c) for c in df.columns.tolist()]
+    
+    # Update dtypes
+    dtypes = {}
+    df_sample = df.head(5)
+    for col in df_sample.columns:
+        if pd.api.types.is_numeric_dtype(df_sample[col]):
+            dtypes[str(col)] = "float"
+        else:
+            dtypes[str(col)] = "str"
+    session.dtypes = dtypes
+    
+    session.row_count = len(df)
+    session.sample_rows = df_sample.fillna("").to_dict(orient="records")
+    session.cached_df = df
+    
+    # 5. Persist updated session
+    from app.core.session import save_session
+    save_session(session)
+    logger.info(f"[Dataset Update] Successfully updated session {session.session_id} with modified dataset.")

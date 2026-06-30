@@ -933,6 +933,57 @@ def _build_namespace(session: Optional[SessionData], code: str) -> dict:
     return ns
 
 
+def _check_and_upload_modified_df(session: Optional[SessionData], initial_df: Optional[pd.DataFrame], code: str):
+    """
+    Check if the dataframe was modified during execution, and if so, upload the updated version.
+    """
+    if session is None or not session.filename or initial_df is None:
+        return
+
+    current_df = session.cached_df
+    if current_df is None or not isinstance(current_df, pd.DataFrame):
+        return
+
+    # Check if df was modified
+    modified = False
+    if current_df is not initial_df:
+        modified = True
+    elif current_df.shape != initial_df.shape:
+        modified = True
+    elif not current_df.columns.equals(initial_df.columns):
+        modified = True
+    else:
+        try:
+            if not current_df.equals(initial_df):
+                modified = True
+        except Exception:
+            modified = True
+
+    if modified:
+        logger.info(f"[Executor] Dataset modification detected for session {session.session_id}. Uploading updated dataset...")
+        from app.services.dataset_service import save_and_upload_modified_dataset
+        
+        async def _upload_task():
+            await save_and_upload_modified_dataset(session, current_df)
+            
+        try:
+            try:
+                loop = asyncio.get_running_loop()
+                running = True
+            except RuntimeError:
+                running = False
+
+            if running:
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(asyncio.run, _upload_task())
+                    future.result(timeout=60)
+            else:
+                asyncio.run(_upload_task())
+        except Exception as e:
+            logger.error(f"[Executor] Failed to upload updated dataset: {e}", exc_info=True)
+
+
 def _capture_result(local_ns: dict, initial_ns_keys: set):
     """
     Capture the last DataFrame/Series that was EXPLICITLY assigned by user code
@@ -974,6 +1025,15 @@ def execute_code(session: Optional[SessionData], code: str) -> dict:
         raise RuntimeError(str(e))
 
     initial_keys = set(initial_ns.keys())
+    # Capture initial dataframe state copy
+    initial_df = initial_ns.get("df")
+    initial_df_copy = None
+    if isinstance(initial_df, pd.DataFrame):
+        try:
+            initial_df_copy = initial_df.copy()
+        except Exception:
+            pass
+
     stdout_capture = io.StringIO()
     old_stdout = sys.stdout
     sys.stdout = stdout_capture
@@ -1016,6 +1076,8 @@ def execute_code(session: Optional[SessionData], code: str) -> dict:
             session.kernel_ns = local_ns
             if _uses_df(code, session) and "df" in local_ns and isinstance(local_ns["df"], pd.DataFrame):
                 session.cached_df = local_ns["df"]
+                # Automatically upload the modified dataset to Azure Vault
+                _check_and_upload_modified_df(session, initial_df_copy, code)
 
         # Close all active pyplot figures to avoid leaking plots into subsequent executions
         try:
@@ -1077,6 +1139,15 @@ def execute_code_streaming(session: Optional[SessionData], code: str):
         return
 
     initial_keys = set(initial_ns.keys())
+    # Capture initial dataframe state copy
+    initial_df = initial_ns.get("df")
+    initial_df_copy = None
+    if isinstance(initial_df, pd.DataFrame):
+        try:
+            initial_df_copy = initial_df.copy()
+        except Exception:
+            pass
+
     output_queue: queue.Queue = queue.Queue()
     old_stdout = sys.stdout
     sys.stdout = _LineStreamWriter(output_queue)
@@ -1121,6 +1192,8 @@ def execute_code_streaming(session: Optional[SessionData], code: str):
                 session.kernel_ns = local_ns
                 if _uses_df(code, session) and "df" in local_ns and isinstance(local_ns["df"], pd.DataFrame):
                     session.cached_df = local_ns["df"]
+                    # Automatically upload the modified dataset to Azure Vault
+                    _check_and_upload_modified_df(session, initial_df_copy, code)
 
             # Capture matplotlib figure → local + Azure
             fig = None
