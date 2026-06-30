@@ -567,7 +567,7 @@ async def save_and_upload_modified_dataset(session: SessionData, df: pd.DataFram
     update the session metadata (columns, dtypes, row_count, sample_rows, vault_file_id, blob_name),
     and save the updated session to disk.
     
-    Preserves the original uploaded file untouched, creating/updating a 'cleaned_' prefixed version instead.
+    Preserves all historical versions untouched by generating sequential unique names.
     """
     logger.info(f"[Dataset Update] Uploading modified dataset for session {session.session_id}")
     
@@ -579,20 +579,36 @@ async def save_and_upload_modified_dataset(session: SessionData, df: pd.DataFram
         
     content_type = MIME_TYPES.get(ext, "application/octet-stream")
     
-    # Determine the target filename and whether we should delete the active file
-    base = Path(filename).stem
-    if not base.startswith("cleaned_"):
-        # Original file is active. Keep it untouched, create a new 'cleaned_' file
-        cleaned_filename = f"cleaned_{base}{ext}"
-        should_delete_old = False
-        logger.info(f"[Dataset Update] Preserving original dataset '{filename}' and creating new modified version '{cleaned_filename}'")
-    else:
-        # A cleaned version is already active. Overwrite it to prevent file cluttering
-        cleaned_filename = f"{base}{ext}"
-        should_delete_old = True
-        logger.info(f"[Dataset Update] Overwriting active modified dataset '{filename}'")
+    # 2. Query Vault to find existing files in project folder and resolve sequential version
+    vault = get_vault_client()
+    existing_names = set()
+    if session.vault_project_id and session.vault_folder_id:
+        try:
+            resources = await vault.list_resources(parent_id=session.vault_folder_id, project_id=session.vault_project_id)
+            existing_names = {r.get("name") for r in resources if r.get("type") == "file"}
+        except Exception as le:
+            logger.warning(f"[Dataset Update] Could not list project resources: {le}")
 
-    # 2. Convert DataFrame to bytes
+    # Strip versioning & cleaned_ prefix from active filename to find original base name
+    import re
+    base = Path(filename).stem
+    if base.startswith("cleaned_"):
+        base = base[8:]
+    base = re.sub(r'_(cleaned|v|version)?_?\d+$', '', base)
+    base = re.sub(r'_cleaned$', '', base)
+    
+    # Find next unique version filename
+    version = 1
+    while True:
+        candidate = f"cleaned_{base}_v{version}{ext}"
+        if candidate not in existing_names:
+            target_filename = candidate
+            break
+        version += 1
+        
+    logger.info(f"[Dataset Update] Target unique filename resolved: '{target_filename}'")
+    
+    # 3. Convert DataFrame to bytes
     buf = io.BytesIO()
     if ext in (".xlsx", ".xls"):
         df.to_excel(buf, index=False)
@@ -600,21 +616,10 @@ async def save_and_upload_modified_dataset(session: SessionData, df: pd.DataFram
         df.to_csv(buf, index=False)
     file_bytes = buf.getvalue()
     
-    # 3. Upload to Azure Vault
-    vault = get_vault_client()
-    
-    # If we are overwriting a previously cleaned version, delete the old resource first
-    if should_delete_old and session.vault_file_id:
-        try:
-            logger.info(f"[Dataset Update] Deleting old modified file resource {session.vault_file_id}")
-            await vault.delete_resource(session.vault_file_id)
-        except Exception as e:
-            logger.warning(f"[Dataset Update] Failed to delete old resource {session.vault_file_id}: {e}")
-            
     # Upload the updated file bytes
     try:
         file_data = await vault.upload_file_complete(
-            filename=cleaned_filename,
+            filename=target_filename,
             file_bytes=file_bytes,
             project_id=session.vault_project_id,
             folder_id=session.vault_folder_id,
@@ -637,7 +642,7 @@ async def save_and_upload_modified_dataset(session: SessionData, df: pd.DataFram
         raise RuntimeError(f"Failed uploading modified dataset to Vault: {str(e)}")
         
     # 4. Update session metadata
-    session.filename = cleaned_filename
+    session.filename = target_filename
     session.vault_file_id = file_data.get("id", session.vault_file_id)
     session.blob_name = file_data.get("blob_name", session.blob_name)
     session.columns = [str(c) for c in df.columns.tolist()]

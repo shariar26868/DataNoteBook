@@ -772,6 +772,29 @@ def _build_namespace(session: Optional[SessionData], code: str) -> dict:
             if file_id:
                 await vault.update_upload_status(file_id, {"upload_status": "completed"})
                 print(f"File '{filename}' successfully saved/uploaded to Vault (ID: {file_id})")
+                
+                # Update session details so the active dataset switches to this new file
+                if session is not None:
+                    session.filename = filename
+                    session.vault_file_id = file_id
+                    session.blob_name = file_data.get("blob_name", session.blob_name)
+                    if isinstance(data, pd.DataFrame):
+                        session.columns = [str(c) for c in data.columns.tolist()]
+                        # Update dtypes
+                        dtypes = {}
+                        df_sample = data.head(5)
+                        for col in df_sample.columns:
+                            if pd.api.types.is_numeric_dtype(df_sample[col]):
+                                dtypes[str(col)] = "float"
+                            else:
+                                dtypes[str(col)] = "str"
+                        session.dtypes = dtypes
+                        session.row_count = len(data)
+                        session.sample_rows = df_sample.fillna("").to_dict(orient="records")
+                        session.cached_df = data
+                    
+                    from app.core.session import save_session
+                    save_session(session)
                 return True
             else:
                 print(f"File '{filename}' registered in Vault but could not confirm completion status.")
