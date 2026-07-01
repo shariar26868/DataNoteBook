@@ -937,21 +937,25 @@ def _build_namespace(session: Optional[SessionData], code: str) -> dict:
     if session is not None:
         logger.info(f"[Executor] Session {session.session_id}: filename='{session.filename}', "
                    f"cached_df={'available' if session.cached_df is not None else 'None'}")
-        try:
-            df = load_dataframe(session)
-            ns["df"] = df
-            if session.filename:
-                df_name = infer_df_name(session.filename)
-                ns[df_name] = df
-            logger.info(f"[Executor] Successfully loaded dataframe: {len(df)} rows, {len(df.columns)} columns")
-        except RuntimeError as e:
-            # Re-raise RuntimeError to be caught by routes
-            logger.error(f"[Executor] Failed to load dataset: {e}")
-            raise RuntimeError(f"Cannot load dataset: {str(e)}")
-        except Exception as e:
-            # Any other exception also becomes RuntimeError
-            logger.error(f"[Executor] Unexpected error loading dataset: {e}", exc_info=True)
-            raise RuntimeError(f"Dataset loading failed: {str(e)}")
+        if _uses_df(code, session):
+            logger.info(f"[Executor] Session {session.session_id}: code references df, loading dataset")
+            try:
+                df = load_dataframe(session)
+                ns["df"] = df
+                if session.filename:
+                    df_name = infer_df_name(session.filename)
+                    ns[df_name] = df
+                logger.info(f"[Executor] Successfully loaded dataframe: {len(df)} rows, {len(df.columns)} columns")
+            except RuntimeError as e:
+                # Re-raise RuntimeError to be caught by routes
+                logger.error(f"[Executor] Failed to load dataset: {e}")
+                raise RuntimeError(f"Cannot load dataset: {str(e)}")
+            except Exception as e:
+                # Any other exception also becomes RuntimeError
+                logger.error(f"[Executor] Unexpected error loading dataset: {e}", exc_info=True)
+                raise RuntimeError(f"Dataset loading failed: {str(e)}")
+        else:
+            logger.info(f"[Executor] Session {session.session_id}: code does not reference df, skipping dataset load")
 
     return ns
 
@@ -1099,8 +1103,9 @@ def execute_code(session: Optional[SessionData], code: str) -> dict:
             session.kernel_ns = local_ns
             if _uses_df(code, session) and "df" in local_ns and isinstance(local_ns["df"], pd.DataFrame):
                 session.cached_df = local_ns["df"]
-                # Automatically upload the modified dataset to Azure Vault
-                _check_and_upload_modified_df(session, initial_df_copy, code)
+                # Do not auto-upload modified datasets to Vault.
+                # Users must explicitly save with save_to_vault(df, filename).
+                # _check_and_upload_modified_df(session, initial_df_copy, code)
 
         # Close all active pyplot figures to avoid leaking plots into subsequent executions
         try:
@@ -1215,8 +1220,8 @@ def execute_code_streaming(session: Optional[SessionData], code: str):
                 session.kernel_ns = local_ns
                 if _uses_df(code, session) and "df" in local_ns and isinstance(local_ns["df"], pd.DataFrame):
                     session.cached_df = local_ns["df"]
-                    # Automatically upload the modified dataset to Azure Vault
-                    _check_and_upload_modified_df(session, initial_df_copy, code)
+                    # Do not automatically upload modified datasets.
+                    # Users must explicitly call save_to_vault(df, filename) to persist changes.
 
             # Capture matplotlib figure → local + Azure
             fig = None

@@ -1,0 +1,5 @@
+respondent_id,task,specialty,chosen,option_a_efficacy,option_b_efficacy,option_a_safety,option_b_safety,option_a_dosing,option_b_dosing,option_a_price,option_b_price
+1,1,GP,A,High,Medium,High SE,Moderate SE,Weekly,Once daily,400,300
+1,2,GP,B,Medium,High,Moderate SE,High SE,Once daily,Weekly,300,400
+2,1,Specialist,A,Low,Medium,Low SE,High SE,Twice daily,Weekly,200,300
+2,2,Specialist,B,Medium,Low,High SE,Low SE,Weekly,Twice daily,350,250
