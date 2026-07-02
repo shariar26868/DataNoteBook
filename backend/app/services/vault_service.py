@@ -989,6 +989,31 @@ class VaultClient:
             logger.error(f"[Vault] Azure upload failed ({e.response.status_code}): {e.response.text[:500]}")
             raise
 
+    async def _get_existing_file_names(self, parent_folder_id: str, project_id: str) -> set[str]:
+        """List existing file names in the target vault folder/project."""
+        try:
+            resources = await self.list_resources(parent_id=parent_folder_id, project_id=project_id)
+            return {
+                r.get("name")
+                for r in resources
+                if r.get("type") == "file" and isinstance(r.get("name"), str)
+            }
+        except Exception as e:
+            logger.warning(f"[Vault] Could not list existing resources for duplicate detection: {e}")
+            return set()
+
+    @staticmethod
+    def _build_unique_name(name: str, existing_names: set[str]) -> str:
+        import os
+
+        base, ext = os.path.splitext(name)
+        candidate = name
+        index = 1
+        while candidate in existing_names:
+            candidate = f"{base} ({index}){ext}"
+            index += 1
+        return candidate
+
     async def upload_file_complete(
         self,
         filename: str,
@@ -1002,6 +1027,10 @@ class VaultClient:
         1. Create file entry in vault → get presigned_url
         2. PUT bytes to Azure
 
+        If the target folder already contains a file with the same name,
+        this method automatically chooses a unique filename to avoid
+        duplicate-name failures.
+
         Returns the file data dict from the vault API.
         """
         import os
@@ -1010,15 +1039,44 @@ class VaultClient:
         ext = os.path.splitext(name)[1].lstrip(".") if "." in name else ""
         size = len(file_bytes)
 
-        # Create file entry in vault
-        file_data = await self.create_file(
-            name=name,
-            size=size,
-            extension=ext,
-            mime_type=content_type,
-            project_id=project_id,
-            parent_folder_id=folder_id,
-        )
+        existing_names = await self._get_existing_file_names(folder_id, project_id)
+        if name in existing_names:
+            unique_name = self._build_unique_name(name, existing_names)
+            logger.info(
+                f"[Vault] Duplicate filename detected for '{name}'. "
+                f"Uploading as '{unique_name}' instead."
+            )
+            name = unique_name
+        else:
+            unique_name = name
+
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                file_data = await self.create_file(
+                    name=name,
+                    size=size,
+                    extension=ext,
+                    mime_type=content_type,
+                    project_id=project_id,
+                    parent_folder_id=folder_id,
+                )
+                break
+            except httpx.HTTPStatusError as e:
+                if (
+                    e.response.status_code == 400
+                    and "ALREADY_EXISTS" in e.response.text
+                    and attempt < 5
+                ):
+                    existing_names = await self._get_existing_file_names(folder_id, project_id)
+                    name = self._build_unique_name(name, existing_names)
+                    logger.warning(
+                        f"[Vault] create_file returned ALREADY_EXISTS for '{name}'. "
+                        f"Retrying as '{name}'."
+                    )
+                    continue
+                raise
 
         # Upload actual bytes to Azure
         presigned_url = file_data.get("presigned_url")

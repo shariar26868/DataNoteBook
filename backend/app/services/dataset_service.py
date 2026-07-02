@@ -270,6 +270,44 @@ from app.services.vault_service import get_vault_client
 
 logger = logging.getLogger(__name__)
 
+
+def _get_session_cache_dir(session_id: str) -> Path:
+    cache_dir = Path(settings.UPLOAD_DIR) / "sessions" / session_id
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
+
+
+def _get_cached_dataset_path(session_id: str, filename: str) -> Path:
+    return _get_session_cache_dir(session_id) / Path(filename).name
+
+
+def _save_dataset_cache(session_id: str, filename: str, raw_bytes: bytes) -> None:
+    cache_path = _get_cached_dataset_path(session_id, filename)
+    cache_path.write_bytes(raw_bytes)
+
+
+def _load_dataframe_from_local_cache(session: SessionData) -> "Optional[pd.DataFrame]":
+    if not session.session_id or not session.filename:
+        return None
+
+    cache_path = _get_cached_dataset_path(session.session_id, session.filename)
+    if not cache_path.exists():
+        return None
+
+    try:
+        raw_bytes = cache_path.read_bytes()
+        buf = io.BytesIO(raw_bytes)
+        if cache_path.suffix.lower() == ".csv":
+            return pd.read_csv(buf)
+        return pd.read_excel(buf)
+    except Exception as e:
+        logger.warning(f"[Dataset Cache] Failed to load local cached dataset for session {session.session_id}: {e}")
+        return None
+
+
+
+logger = logging.getLogger(__name__)
+
 ALLOWED_EXT = {".csv", ".xlsx", ".xls"}
 
 MIME_TYPES = {
@@ -353,6 +391,13 @@ async def handle_upload(file: UploadFile) -> SessionData:
     except Exception as e:
         logger.error(f"[Upload] Failed uploading to Azure: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed uploading to Azure: {str(e)}")
+
+    # Save a local copy of the uploaded dataset so the session can be restored later
+    try:
+        _save_dataset_cache(session_id, file.filename, raw_bytes)
+        logger.info(f"[Dataset Cache] Saved local cache for session {session_id}")
+    except Exception as e:
+        logger.warning(f"[Dataset Cache] Could not save local dataset cache for session {session_id}: {e}")
 
     # Build dtype info
     dtypes = {}
@@ -515,9 +560,16 @@ def load_dataframe(session: SessionData) -> pd.DataFrame:
 
     logger.warning(
         f"[Load DF] Session {session.session_id}: cached_df is None. "
-        f"Attempting re-download from Vault (file_id={session.vault_file_id})..."
+        f"Attempting local cache restore or Vault re-download (file_id={session.vault_file_id})..."
     )
-    
+
+    # First try a local cached copy saved at upload time
+    cached_df = _load_dataframe_from_local_cache(session)
+    if cached_df is not None:
+        session.cached_df = cached_df
+        logger.info(f"[Load DF] Session {session.session_id}: restored dataset from local cache.")
+        return cached_df
+
     try:
         import asyncio
         from app.services.vault_service import get_vault_client
@@ -664,4 +716,4 @@ async def save_and_upload_modified_dataset(session: SessionData, df: pd.DataFram
     # 5. Persist updated session
     from app.core.session import save_session
     save_session(session)
-    logger.info(f"[Dataset Update] Successfully updated session {session.session_id} with modified dataset.")
+    logger.info(f"[Dataset Update] Successfully updated session {session.session_id} with modified dataset.")

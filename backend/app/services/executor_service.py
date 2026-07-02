@@ -529,6 +529,11 @@ import logging
 from typing import Optional
 from pathlib import Path
 
+try:
+    matplotlib.use("Agg")
+except Exception:
+    logging.getLogger(__name__).warning("Could not set matplotlib backend to Agg", exc_info=True)
+
 from app.models.session import SessionData
 from app.services.dataset_service import load_dataframe
 from app.services.vault_service import get_vault_client
@@ -1044,6 +1049,11 @@ def execute_code(session: Optional[SessionData], code: str) -> dict:
     syntax_warning = _check_syntax(code)
     if syntax_warning:
         logger.debug(f"[Executor] Syntax pre-check note: {syntax_warning}")
+
+    try:
+        matplotlib.use("Agg")
+    except Exception:
+        logger.debug("[Executor] could not set matplotlib backend to Agg", exc_info=True)
 
     try:
         initial_ns = _build_namespace(session, code)
